@@ -23,14 +23,16 @@ impl Plugin for SkMaterialPlugin {
 
 pub fn replace_material(
     mut commands: Commands,
-    query: Query<(Entity, &Handle<StandardMaterial>)>,
+    query: Query<(Entity, &MeshMaterial3d<StandardMaterial>)>,
     mut pbr_material: ResMut<Assets<PbrMaterial>>,
     standard_material: Res<Assets<StandardMaterial>>,
 ) {
     for (e, m) in query.iter() {
         println!("uwu: {}", e);
         let m = standard_material.get(m).unwrap();
-        commands.entity(e).insert(pbr_material.add(PbrMaterial {
+        commands
+            .entity(e)
+            .insert(MeshMaterial3d(pbr_material.add(PbrMaterial {
             color: m.base_color,
             emission_factor: Default::default(),
             metallic: m.metallic,
@@ -44,8 +46,8 @@ pub fn replace_material(
             metal_texture: m.metallic_roughness_texture.clone(),
             occlusion_texture: m.occlusion_texture.clone(),
             color_texture: m.base_color_texture.clone(),
-        }));
-        commands.entity(e).remove::<Handle<StandardMaterial>>();
+        })));
+        commands.entity(e).remove::<MeshMaterial3d<StandardMaterial>>();
     }
 }
 
@@ -93,7 +95,7 @@ pub struct PbrMaterialUniform {
 }
 
 impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
-    fn as_bind_group_shader_type(&self, images: &RenderAssets<GpuImage>) -> PbrMaterialUniform {
+    fn as_bind_group_shader_type(&self, _images: &RenderAssets<GpuImage>) -> PbrMaterialUniform {
         let mut flags = PbrMaterialFlags::empty();
 
         if self.diffuse_texture.is_some() {

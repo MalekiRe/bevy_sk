@@ -1,11 +1,11 @@
 use bevy::math::{Quat, Vec3};
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, Mesh};
+use bevy::render::mesh::{Indices, Mesh, MeshAabb};
 use bevy::render::primitives::Aabb;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::PrimitiveTopology;
 
-use bevy_mod_xr::hands::{HandBone, HandBoneRadius, XrHandBoneEntities, HAND_JOINT_COUNT};
+use bevy_mod_xr::hands::{HandBone, XrHandBoneEntities, XrHandBoneRadius, HAND_JOINT_COUNT};
 use bevy_mod_xr::session::XrSessionCreatedEvent;
 use bevy_mod_xr::spaces::XrSpaceLocationFlags;
 use std::f32::consts::{PI, SQRT_2};
@@ -131,11 +131,10 @@ impl SkHandFinger {
                 // }
                 let curr1 = start_vert + (joint * RING_COUNT as u16 + ring);
                 let next1 = start_vert + (joint + 1) * RING_COUNT as u16 + ring;
-                let mut curr2 = start_vert + (joint * RING_COUNT as u16 + (ring + 1));
+                let curr2 = start_vert + (joint * RING_COUNT as u16 + (ring + 1));
                 let next2 = start_vert + (joint + 1) * RING_COUNT as u16 + (ring + 1);
 
                 if ring == RING_COUNT as u16 - 1 {
-                    let curr1 = start_vert + (joint.saturating_sub(1) * RING_COUNT as u16 + ring);
                     continue;
                 }
                 indices.extend_from_slice(&[next2, next1, curr1, curr2, next2, curr1]);
@@ -283,18 +282,16 @@ fn setup_hand_mesh(
 ) {
     for e in &hands {
         info!("creating hand");
-        let hand_mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
+        let mut hand_mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
+        hand_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0,0.0,0.0]]);
         commands.entity(e).insert((
-            PbrBundle {
-                mesh: meshes.add(hand_mesh),
-                material: materials.add(StandardMaterial {
-                    unlit: true,
-                    alpha_mode: AlphaMode::Blend,
-                    ..default()
-                }),
-                transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            Mesh3d(meshes.add(hand_mesh)),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                unlit: true,
+                alpha_mode: AlphaMode::Blend,
                 ..default()
-            },
+            })),
+            Transform::from_xyz(0.0, 0.0, 0.0),
             Aabb::default(),
         ));
     }
@@ -328,7 +325,7 @@ impl Plugin for HandPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Last,
-            setup_hand_mesh.run_if(on_event::<XrSessionCreatedEvent>()),
+            setup_hand_mesh.run_if(on_event::<XrSessionCreatedEvent>),
         );
         app.add_systems(Update, update_hand_mesh);
     }
@@ -336,8 +333,8 @@ impl Plugin for HandPlugin {
 
 fn update_hand_mesh(
     mut meshes: ResMut<Assets<Mesh>>,
-    mut hand_mesh: Query<(&Handle<Mesh>, &mut Aabb, &XrHandBoneEntities)>,
-    joint_query: Query<(&GlobalTransform, &HandBoneRadius, &XrSpaceLocationFlags)>,
+    mut hand_mesh: Query<(&Mesh3d, &mut Aabb, &XrHandBoneEntities)>,
+    joint_query: Query<(&GlobalTransform, &XrHandBoneRadius, &XrSpaceLocationFlags)>,
 ) {
     for (mesh_handle, mut aabb, entities) in hand_mesh.iter_mut() {
         let Ok(entities) = joint_query.get_many(entities.0) else {
@@ -359,7 +356,9 @@ fn update_hand_mesh(
         let mut indices = Vec::new();
 
         let mut i = 0;
-        for finger in Finger::ALL {
+        let mut fingers = Finger::ALL;
+        fingers.reverse();
+        for finger in fingers {
             let (_, _, flag) = entities[finger.hand_bone(&FingerJoint::Tip) as usize];
             if (!flag.position_tracked) || (!flag.rotation_tracked) {
                 continue;
@@ -374,6 +373,9 @@ fn update_hand_mesh(
             positions.extend(poses);
             normals.extend(norms);
             i += 1;
+        }
+        if positions.is_empty() {
+            continue;
         }
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
         mesh.insert_indices(Indices::U16(indices));
