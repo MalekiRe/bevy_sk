@@ -14,7 +14,8 @@ bitflags = "2.6.0"
 # bevy_panorbit_camera = "0.19.3"
 
 [workspace.dependencies]
-bevy = "0.15.1"
+# this now depends on the bevy feature flags that bevy_mod_xr sets, fun!
+bevy = { version = "0.15", default-features = false }
 bevy_mod_openxr.git = "https://github.com/awtterpip/bevy_oxr"
 bevy_mod_xr.git = "https://github.com/awtterpip/bevy_oxr"
 bevy_xr_utils.git = "https://github.com/awtterpip/bevy_oxr"

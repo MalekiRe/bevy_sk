@@ -15,6 +15,7 @@ pub struct SkMaterialPlugin {
 }
 impl Plugin for SkMaterialPlugin {
     fn build(&self, app: &mut App) {
+        app.register_type::<PbrMaterial>();
         if self.replace_standard_material {
             app.add_systems(PostUpdate, replace_material);
         }
@@ -28,7 +29,6 @@ pub fn replace_material(
     standard_material: Res<Assets<StandardMaterial>>,
 ) {
     for (e, m) in query.iter() {
-        println!("uwu: {}", e);
         let m = standard_material.get(m).unwrap();
         commands
             .entity(e)
@@ -47,13 +47,15 @@ pub fn replace_material(
             occlusion_texture: m.occlusion_texture.clone(),
             color_texture: m.base_color_texture.clone(),
         })));
-        commands.entity(e).remove::<MeshMaterial3d<StandardMaterial>>();
+        commands
+            .entity(e)
+            .remove::<MeshMaterial3d<StandardMaterial>>();
     }
 }
 
 pub const SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x2d86c40a165b);
 
-#[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, TypePath)]
+#[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, TypePath, Reflect)]
 /*#[bind_group_data(PbrMaterialKey)]*/
 #[uniform(0, PbrMaterialUniform)]
 pub struct PbrMaterial {
