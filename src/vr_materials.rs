@@ -55,7 +55,7 @@ pub fn replace_material(
 
 pub const SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x2d86c40a165b);
 
-#[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, TypePath, Reflect)]
+#[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, Reflect)]
 /*#[bind_group_data(PbrMaterialKey)]*/
 #[uniform(0, PbrMaterialUniform)]
 pub struct PbrMaterial {
