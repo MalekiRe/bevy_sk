@@ -43,7 +43,7 @@ var color_texture: texture_2d<f32>;
 @group(2) @binding(10)
 var color_sampler: sampler;
 
-
+// Cubemap is part of the view bindings in Bevy
 // @group(0) @binding(10)
 // var environment_map: texture_cube<f32>;
 // @group(0) @binding(11)
@@ -92,58 +92,72 @@ fn sk_pbr_brdf_appx(roughness: f32, ndotv: f32) -> vec2<f32> {
 }
 
 @fragment
-fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @location(0) vec4<f32> {
+fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @location(0) vec4<f32> {
     let pbr_input = pbr_input_from_vertex_output(in, is_front, false);
 
-    let uv = in.uv;
-    //let uv = in.uv * material.tex_scale;
+    #ifdef VERTEX_UVS_A
+    let uv = in.uv * material.tex_scale;
+    #endif
 
     var albedo = material.color;
-    /*if ((material.flags & 4u) != 0u) {
+    #ifdef VERTEX_COLORS
+        albedo *= in.color;
+    #endif
+    if (material.flags & 4u) != 0u {
+        #ifdef VERTEX_UVS_A
         albedo *= textureSample(diffuse_texture, diffuse_sampler, uv);
-    }*/
+    #endif
+    }
 
+    #ifdef VERTEX_UVS_A
     albedo *= textureSample(color_texture, color_sampler, uv);
+    #endif
 
-    //var emissive = material.emission_factor.rgb;
-    /*if ((material.flags & 16u) != 0u) {
+    var emissive = material.emission_factor.rgb;
+    if (material.flags & 16u) != 0u {
+        #ifdef VERTEX_UVS_A
         emissive *= textureSample(emission_texture, emission_sampler, uv).rgb;
-    }*/
+    #endif
+    }
 
-    //var metal_rough = vec2(material.roughness, material.metallic);
-   /* if ((material.flags & 32u) != 0u) {
+    var metal_rough = vec2(material.roughness, material.metallic);
+    if (material.flags & 32u) != 0u {
+            #ifdef VERTEX_UVS_A
         metal_rough *= textureSample(metal_texture, metal_sampler, uv).bg;
-    }*/
+    #endif
+    }
 
     var ao = 1.0;
-    /*if ((material.flags & 64u) != 0u) {
+    if (material.flags & 64u) != 0u {
+                    #ifdef VERTEX_UVS_A
         ao = textureSample(occlusion_texture, occlusion_sampler, uv).r;
-    }*/
+    #endif
+    }
 
     let N = normalize(pbr_input.world_normal);
-    //let V = normalize(view.world_position.xyz - in.world_position.xyz);
-   // let R = reflect(-V, N);
+    let V = normalize(view.world_position.xyz - in.world_position.xyz);
+    let R = reflect(-V, N);
 
-   /* let ndotv = max(dot(N, V), 0.0001);
+    let ndotv = max(dot(N, V), 0.0001);
     let F0 = mix(vec3(0.04), albedo.rgb, metal_rough.y);
 
     let F = sk_pbr_fresnel_schlick_roughness(ndotv, F0, metal_rough.x);
     let kS = F;
     var kD = vec3(1.0) - kS;
-    kD *= 1.0 - metal_rough.y;*/
+    kD *= 1.0 - metal_rough.y;
 
     let irradiance = sk_lighting(N, material.spherical_harmonics);
 
     let diffuse = albedo.rgb * irradiance;
 
-    //let mip = metal_rough.x * f32(view.mip_bias);
+    let mip = metal_rough.x * f32(view.mip_bias);
     //let prefilteredColor = diffuse;
     //let prefilteredColor = textureSampleLevel(view.environment_map, view.environment_sampler, R, mip).rgb;
 
-    //let envBRDF = sk_pbr_brdf_appx(metal_rough.x, ndotv);
-    //let specular = (F * envBRDF.x + envBRDF.y);
+    let envBRDF = sk_pbr_brdf_appx(metal_rough.x, ndotv);
+    let specular = (F * envBRDF.x + envBRDF.y);
 
-    var color = (/*kD **/ diffuse/* + specular*/ ) /** ao*/;
+    var color = (kD * diffuse + specular) * ao;
     //color += emissive;
 
     return vec4(color, albedo.a);

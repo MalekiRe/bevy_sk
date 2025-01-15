@@ -1,40 +1,64 @@
-use bevy::math::{Vec3, Vec4};
-use bevy::prelude::*;
-use bevy::render::render_resource::{
-    Extent3d, ShaderType, TextureDimension, TextureFormat, TextureViewDescriptor,
-    TextureViewDimension,
-};
 use std::ops::Mul;
+use bevy::asset::load_internal_asset;
+use bevy::math::{Mat3, Vec3};
+use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, ShaderType, TextureDimension, TextureFormat, TextureViewDescriptor, TextureViewDimension, UniformBuffer};
+use crate::vr_materials::{PbrMaterial, SHADER_HANDLE};
 
-pub struct SkyTexPlugin;
+pub struct SkytexPlugin;
 
-impl Plugin for SkyTexPlugin {
+
+#[derive(Resource)]
+pub struct SphericalHarmonicsUniform {
+    pub buffer: UniformBuffer<SphericalHarmonics>,
+}
+
+pub struct SphericalHarmonicsPlugin;
+
+impl Plugin for SphericalHarmonicsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, setup_skytex);
+        load_internal_asset!(app, SHADER_HANDLE, "../assets/pbr_material.wgsl", Shader::from_wgsl);
+        app
+            //.add_plugins(MaterialPlugin::<PbrMaterial>::default())
+            .add_systems(Startup, setup_spherical_harmonics)
+            .add_plugins(MaterialPlugin::<crate::vr_materials::PbrMaterial>::default())
+            .add_systems(Update, update_spherical_harmonics);
     }
 }
 
-#[derive(Component)]
-pub struct SetupSkyTex;
-
-pub fn setup_skytex(
-    mut commands: Commands,
-    query: Query<(Entity), (With<Camera3d>, Without<SetupSkyTex>)>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    for entity in query.iter() {
-        let mut windowed_lighting = DEFAULT_LIGHTING.clone();
-        sh_windowing(&mut windowed_lighting, 1.0);
-        commands.entity(entity).insert((bevy::core_pipeline::Skybox {
-            image: images.add(generate_cubemap(&windowed_lighting, 16, 0.3f32, 6.0).unwrap()),
-            brightness: 800.0,
-        }, SetupSkyTex));
-    }
+fn setup_spherical_harmonics(mut commands: Commands) {
+    let sh_coeffs = DEFAULT_LIGHTING;
+    let buffer = UniformBuffer::from(sh_coeffs);
+    commands.insert_resource(SphericalHarmonicsUniform { buffer });
 }
 
-#[derive(ShaderType, Default, Copy, Clone, Debug, PartialEq)]
-pub struct SphericalHarmonics {
-    pub coefficients: [Vec3; 9],
+fn update_spherical_harmonics(mut sh_uniform: ResMut<SphericalHarmonicsUniform>, query: Query<&Handle<PbrMaterial>>, mut assets: ResMut<Assets<PbrMaterial>>) {
+    let mut windowed_lighting = DEFAULT_LIGHTING.clone();
+    sh_windowing(&mut windowed_lighting, 1.0);
+    sh_uniform.buffer.set(windowed_lighting);
+    for awa in query.iter() {
+        assets.get_mut(awa).unwrap().spherical_harmonics = DEFAULT_LIGHTING.clone();
+    }
+    // Update spherical harmonics coefficients here
+    // For example:
+    // sh_uniform.buffer.get_mut().coefficients[0] = [0.74, 0.74, 0.73, 1.0];
+    // ...
+}
+
+impl Plugin for SkytexPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, |mut commands: Commands, query: Query<(Entity, &mut Camera3d)>, mut images: ResMut<Assets<Image>>| {
+            for (e, c) in query.iter() {
+                let mut windowed_lighting = DEFAULT_LIGHTING.clone();
+                sh_windowing(&mut windowed_lighting, 1.0);
+                commands.entity(e).insert(bevy::core_pipeline::Skybox {
+
+                    image: images.add(generate_cubemap(&windowed_lighting, 16, 0.3f32, 6.0).unwrap()),
+                    brightness: 1000.0,
+                });
+            }
+        });
+    }
 }
 
 pub const DEFAULT_LIGHTING: SphericalHarmonics = SphericalHarmonics {
@@ -50,6 +74,13 @@ pub const DEFAULT_LIGHTING: SphericalHarmonics = SphericalHarmonics {
         Vec3::new(0.04, 0.04, 0.04),
     ],
 };
+
+
+// tex_gen_cubemap_sh(lighting, 16, 0.3f);
+#[derive(ShaderType, Default, Copy, Clone, Debug, PartialEq)]
+pub struct SphericalHarmonics {
+    pub coefficients: [Vec3; 9],
+}
 
 pub(crate) fn sh_windowing(harmonics: &mut SphericalHarmonics, window_width: f32) {
     let mut i = 0;
@@ -76,6 +107,7 @@ fn plane_ray_intersect(plane: (Vec3, f32), ray: (Vec3, Vec3)) -> (bool, Vec3) {
     // Return (true, out_pt) if t >= 0, otherwise (false, out_pt)
     (t >= 0.0, out_pt)
 }
+
 
 pub(crate) fn generate_cubemap(
     lookup: &SphericalHarmonics,
@@ -145,8 +177,7 @@ pub(crate) fn generate_cubemap(
         }
     }
 
-    let image_data: Vec<u8> = data
-        .into_iter()
+    let image_data: Vec<u8> = data.into_iter()
         .flat_map(|v| {
             vec![
                 (v.x * 255.0).clamp(0.0, 255.0) as u8,
@@ -156,6 +187,7 @@ pub(crate) fn generate_cubemap(
             ]
         })
         .collect();
+
 
     let mut image = Image::new(
         Extent3d {
@@ -230,9 +262,17 @@ fn math_cubemap_corner(i: i32) -> Vec3 {
         if nx != 0 {
             neg
         } else if ny != 0 {
-            if u != 0 { -1.0 } else { 1.0 }.mul(neg)
+            if u != 0 {
+                -1.0
+            } else {
+                1.0
+            }.mul(neg)
         } else {
-            if u != 0 { 1.0 } else { -1.0 }.mul(neg)
+            if u != 0 {
+                1.0
+            } else {
+                -1.0
+            }.mul(neg)
         },
         if nx != 0 || nz != 0 {
             if v != 0 {
@@ -244,7 +284,11 @@ fn math_cubemap_corner(i: i32) -> Vec3 {
             neg
         },
         if nx != 0 {
-            if u != 0 { -1.0 } else { 1.0 }.mul(neg)
+            if u != 0 {
+                -1.0
+            } else {
+                1.0
+            }.mul(neg)
         } else if ny != 0 {
             if v != 0 {
                 1.0
