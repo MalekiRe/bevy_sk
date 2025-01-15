@@ -82,7 +82,6 @@ struct HandJoint {
     radius: f32,
 }
 
-const RING_SEGMENTS: usize = 8;
 const SINCOS_ANGLES: [f32; 7] = [162.0, 90.0, 18.0, 18.0, 306.0, 234.0, 162.0];
 const SINCOS_NORM_ANGLES: [f32; 7] = [126.0, 90.0, 54.0, 18.0, 306.0, 234.0, 162.0];
 

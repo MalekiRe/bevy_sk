@@ -93,7 +93,7 @@ pub const DEFAULT_LIGHTING: SphericalHarmonics = SphericalHarmonics {
 };
 
 // tex_gen_cubemap_sh(lighting, 16, 0.3f);
-#[derive(ShaderType, Default, Copy, Clone, Debug, PartialEq)]
+#[derive(ShaderType, Default, Copy, Clone, Debug, PartialEq, Reflect)]
 pub struct SphericalHarmonics {
     pub coefficients: [Vec3; 9],
 }
