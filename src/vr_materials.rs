@@ -1,5 +1,4 @@
-use crate::skytex::{SphericalHarmonics, DEFAULT_LIGHTING};
-use bevy::asset::load_internal_asset;
+use crate::skytext::{SphericalHarmonics, DEFAULT_LIGHTING};
 use bevy::render::render_resource::Face;
 use bevy::{
     prelude::*,
@@ -10,26 +9,26 @@ use bevy::{
     },
 };
 
-const SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x2d86c30a165b);
-
-/// Replaces all StandardMaterial with PbrMaterial
-pub struct PbrPlugin;
-
-impl Plugin for PbrPlugin {
+#[derive(Default)]
+pub struct SkMaterialPlugin {
+    pub replace_standard_material: bool,
+}
+impl Plugin for SkMaterialPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER_HANDLE, "pbr.wgsl", Shader::from_wgsl);
-        app.add_plugins(MaterialPlugin::<PbrMaterial>::default());
-        app.add_systems(Update, replace_materials);
+        if self.replace_standard_material {
+            app.add_systems(PostUpdate, replace_material);
+        }
     }
 }
 
-fn replace_materials(
+pub fn replace_material(
     mut commands: Commands,
     query: Query<(Entity, &Handle<StandardMaterial>)>,
     mut pbr_material: ResMut<Assets<PbrMaterial>>,
     standard_material: Res<Assets<StandardMaterial>>,
 ) {
     for (e, m) in query.iter() {
+        println!("uwu: {}", e);
         let m = standard_material.get(m).unwrap();
         commands.entity(e).insert(pbr_material.add(PbrMaterial {
             color: m.base_color,
@@ -37,8 +36,8 @@ fn replace_materials(
             metallic: m.metallic,
             roughness: m.perceptual_roughness,
             tex_scale: 1.0,
-            alpha_mode:/* m.alpha_mode*/ AlphaMode::Opaque,
-            double_sided: false,
+            alpha_mode: m.alpha_mode,
+            double_sided: m.double_sided,
             spherical_harmonics: DEFAULT_LIGHTING,
             diffuse_texture: /*m.diffuse_transmission_texture.clone()*/ Default::default(),
             emission_texture: m.emissive_texture.clone(),
@@ -49,6 +48,8 @@ fn replace_materials(
         commands.entity(e).remove::<Handle<StandardMaterial>>();
     }
 }
+
+pub const SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x2d86c40a165b);
 
 #[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, TypePath)]
 /*#[bind_group_data(PbrMaterialKey)]*/
