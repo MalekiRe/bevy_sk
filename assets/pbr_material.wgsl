@@ -17,7 +17,6 @@ struct PbrMaterial {
     roughness: f32,
     tex_scale: f32,
     flags: u32,
-    spherical_harmonics: array<vec3<f32>, 9>,
 };
 
 @group(2) @binding(0)
@@ -42,6 +41,7 @@ var occlusion_sampler: sampler;
 var color_texture: texture_2d<f32>;
 @group(2) @binding(10)
 var color_sampler: sampler;
+@group(2) @binding(11) var<storage, read> spherical_harmonics_buffer: array<vec3<f32>, 9>;
 
 // Cubemap is part of the view bindings in Bevy
 // @group(0) @binding(10)
@@ -101,7 +101,7 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
 
     var albedo = material.color;
     #ifdef VERTEX_COLORS
-        albedo *= in.color;
+    albedo *= in.color;
     #endif
     if (material.flags & 4u) != 0u {
         #ifdef VERTEX_UVS_A
@@ -146,7 +146,7 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     var kD = vec3(1.0) - kS;
     kD *= 1.0 - metal_rough.y;
 
-    let irradiance = sk_lighting(N, material.spherical_harmonics);
+    let irradiance = sk_lighting(N, spherical_harmonics_buffer);
 
     let diffuse = albedo.rgb * irradiance;
 
