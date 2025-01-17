@@ -1,5 +1,7 @@
-use crate::skytext::{SphericalHarmonics, DEFAULT_LIGHTING};
+use crate::skytext::{SphericalHarmonics, DEFAULT_LIGHTING, SPHERICAL_HARMONICS_HANDLE};
+use bevy::pbr::SHADOW_SAMPLING_HANDLE;
 use bevy::render::render_resource::Face;
+use bevy::render::storage::ShaderStorageBuffer;
 use bevy::{
     prelude::*,
     render::{
@@ -40,7 +42,7 @@ pub fn replace_material(
             tex_scale: 1.0,
             alpha_mode: m.alpha_mode,
             double_sided: m.double_sided,
-            spherical_harmonics: DEFAULT_LIGHTING,
+            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
             diffuse_texture: /*m.diffuse_transmission_texture.clone()*/ Default::default(),
             emission_texture: m.emissive_texture.clone(),
             metal_texture: m.metallic_roughness_texture.clone(),
@@ -66,7 +68,6 @@ pub struct PbrMaterial {
     pub tex_scale: f32,
     pub alpha_mode: AlphaMode,
     pub double_sided: bool,
-    pub spherical_harmonics: SphericalHarmonics,
 
     #[texture(1)]
     #[sampler(2)]
@@ -83,6 +84,8 @@ pub struct PbrMaterial {
     #[texture(9)]
     #[sampler(10)]
     pub color_texture: Option<Handle<Image>>,
+    #[storage(11, read_only)]
+    pub spherical_harmonics: Handle<ShaderStorageBuffer>,
 }
 
 #[derive(Clone, Default, ShaderType)]
@@ -93,7 +96,6 @@ pub struct PbrMaterialUniform {
     pub roughness: f32,
     pub tex_scale: f32,
     pub flags: u32,
-    pub spherical_harmonics: [Vec3; 9],
 }
 
 impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
@@ -129,7 +131,6 @@ impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
             roughness: self.roughness,
             tex_scale: self.tex_scale,
             flags: flags.bits(),
-            spherical_harmonics: self.spherical_harmonics.coefficients,
         }
     }
 }
@@ -196,7 +197,7 @@ impl Default for PbrMaterial {
             tex_scale: 1.0,
             alpha_mode: AlphaMode::Opaque,
             double_sided: false,
-            spherical_harmonics: DEFAULT_LIGHTING,
+            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
             diffuse_texture: None,
             emission_texture: None,
             metal_texture: None,

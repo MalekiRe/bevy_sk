@@ -6,14 +6,10 @@ use bevy::render::render_resource::{
     Extent3d, ShaderType, TextureDimension, TextureFormat, TextureViewDescriptor,
     TextureViewDimension, UniformBuffer,
 };
+use bevy::render::storage::ShaderStorageBuffer;
 use std::ops::Mul;
 
 pub struct SkytexPlugin;
-
-#[derive(Resource)]
-pub struct SphericalHarmonicsUniform {
-    pub buffer: UniformBuffer<SphericalHarmonics>,
-}
 
 pub struct SphericalHarmonicsPlugin;
 
@@ -33,22 +29,23 @@ impl Plugin for SphericalHarmonicsPlugin {
     }
 }
 
-fn setup_spherical_harmonics(mut commands: Commands) {
+pub const SPHERICAL_HARMONICS_HANDLE: Handle<ShaderStorageBuffer> =
+    Handle::weak_from_u128(0x4e5e4e9a1e9161808328acd635928dbb);
+fn setup_spherical_harmonics(
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+) {
     let sh_coeffs = DEFAULT_LIGHTING;
-    let buffer = UniformBuffer::from(sh_coeffs);
-    commands.insert_resource(SphericalHarmonicsUniform { buffer });
+    buffers.insert(
+        &SPHERICAL_HARMONICS_HANDLE,
+        ShaderStorageBuffer::from(sh_coeffs),
+    );
 }
 
-fn update_spherical_harmonics(
-    mut sh_uniform: ResMut<SphericalHarmonicsUniform>,
-    query: Query<&MeshMaterial3d<PbrMaterial>>,
-    mut assets: ResMut<Assets<PbrMaterial>>,
-) {
+fn update_spherical_harmonics(mut buffers: ResMut<Assets<ShaderStorageBuffer>>) {
     let mut windowed_lighting = DEFAULT_LIGHTING.clone();
     sh_windowing(&mut windowed_lighting, 1.0);
-    sh_uniform.buffer.set(windowed_lighting);
-    for awa in query.iter() {
-        assets.get_mut(awa).unwrap().spherical_harmonics = DEFAULT_LIGHTING.clone();
+    if let Some(buffer) = buffers.get_mut(&SPHERICAL_HARMONICS_HANDLE) {
+        buffer.set_data(windowed_lighting);
     }
     // Update spherical harmonics coefficients here
     // For example:
