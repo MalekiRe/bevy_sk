@@ -1,4 +1,5 @@
 use crate::skytext::{SphericalHarmonics, DEFAULT_LIGHTING, SPHERICAL_HARMONICS_HANDLE};
+use bevy::asset::load_internal_asset;
 use bevy::pbr::SHADOW_SAMPLING_HANDLE;
 use bevy::render::render_resource::Face;
 use bevy::render::storage::ShaderStorageBuffer;
@@ -17,6 +18,13 @@ pub struct SkMaterialPlugin {
 }
 impl Plugin for SkMaterialPlugin {
     fn build(&self, app: &mut App) {
+        load_internal_asset!(
+            app,
+            SHADER_HANDLE,
+            "../assets/pbr_material.wgsl",
+            Shader::from_wgsl
+        );
+        app.add_plugins(MaterialPlugin::<PbrMaterial>::default());
         app.register_type::<PbrMaterial>();
         if self.replace_standard_material {
             app.add_systems(PostUpdate, replace_material);

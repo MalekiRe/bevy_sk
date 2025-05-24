@@ -15,16 +15,9 @@ pub struct SphericalHarmonicsPlugin;
 
 impl Plugin for SphericalHarmonicsPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(
-            app,
-            SHADER_HANDLE,
-            "../assets/pbr_material.wgsl",
-            Shader::from_wgsl
-        );
         app
             //.add_plugins(MaterialPlugin::<PbrMaterial>::default())
             .add_systems(Startup, setup_spherical_harmonics)
-            .add_plugins(MaterialPlugin::<crate::vr_materials::PbrMaterial>::default())
             .add_systems(Update, update_spherical_harmonics);
     }
 }
