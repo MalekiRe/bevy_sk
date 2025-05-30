@@ -36,6 +36,7 @@ fn main() {
         .insert_resource(AmbientLight {
             color: Default::default(),
             brightness: 500.0,
+            affects_lightmapped_meshes: true,
         })
         .run();
 }

@@ -1,7 +1,7 @@
-use crate::skytext::{SphericalHarmonics, DEFAULT_LIGHTING, SPHERICAL_HARMONICS_HANDLE};
-use bevy::asset::load_internal_asset;
-use bevy::pbr::SHADOW_SAMPLING_HANDLE;
-use bevy::render::render_resource::Face;
+use crate::skytext::SPHERICAL_HARMONICS_HANDLE;
+use bevy::asset::{load_internal_asset, weak_handle};
+use bevy::pbr::check_entities_needing_specialization;
+use bevy::render::mesh::mark_3d_meshes_as_changed_if_their_assets_changed;
 use bevy::render::storage::ShaderStorageBuffer;
 use bevy::{
     prelude::*,
@@ -26,13 +26,28 @@ impl Plugin for SkMaterialPlugin {
         );
         app.add_plugins(MaterialPlugin::<PbrMaterial>::default());
         app.register_type::<PbrMaterial>();
-        if self.replace_standard_material {
-            app.add_systems(PostUpdate, replace_material);
-        }
+        // if self.replace_standard_material {
+        //     app.add_systems(
+        //         PostUpdate,
+        //         replace_material.before(mark_3d_meshes_as_changed_if_their_assets_changed),
+        //     );
+        // }
     }
 }
 
-pub fn replace_material(
+#[derive(SystemSet, Hash, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct MaterialSwapSet;
+
+fn apply_material(mut commands: Commands, query: Query<(Entity, &NewMaterial)>) {
+    for (e, m) in &query {
+        commands
+            .entity(e)
+            .insert(m.0.clone())
+            .remove::<NewMaterial>();
+    }
+}
+
+fn replace_material(
     mut commands: Commands,
     query: Query<(Entity, &MeshMaterial3d<StandardMaterial>)>,
     mut pbr_material: ResMut<Assets<PbrMaterial>>,
@@ -42,6 +57,7 @@ pub fn replace_material(
         let m = standard_material.get(m).unwrap();
         commands
             .entity(e)
+            .remove::<MeshMaterial3d<StandardMaterial>>()
             .insert(MeshMaterial3d(pbr_material.add(PbrMaterial {
             color: m.base_color,
             emission_factor: Default::default(),
@@ -57,17 +73,17 @@ pub fn replace_material(
             occlusion_texture: m.occlusion_texture.clone(),
             color_texture: m.base_color_texture.clone(),
         })));
-        commands
-            .entity(e)
-            .remove::<MeshMaterial3d<StandardMaterial>>();
     }
 }
+#[derive(Component)]
+struct NewMaterial(MeshMaterial3d<PbrMaterial>);
 
-pub const SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(0x2d86c40a165b);
+pub const SHADER_HANDLE: Handle<Shader> = weak_handle!("c0042819-def7-4e25-bb61-62900fbab385");
 
 #[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, Reflect)]
-/*#[bind_group_data(PbrMaterialKey)]*/
-#[uniform(0, PbrMaterialUniform)]
+#[bind_group_data(PbrMaterialKey)]
+#[bindless(index_table(range(1..13)))]
+#[uniform(0, PbrMaterialUniform, binding_array(10))]
 pub struct PbrMaterial {
     pub color: Color,
     pub emission_factor: Color,
@@ -92,7 +108,7 @@ pub struct PbrMaterial {
     #[texture(9)]
     #[sampler(10)]
     pub color_texture: Option<Handle<Image>>,
-    #[storage(11, read_only)]
+    #[storage(11, read_only, binding_array(11))]
     pub spherical_harmonics: Handle<ShaderStorageBuffer>,
 }
 
@@ -108,29 +124,7 @@ pub struct PbrMaterialUniform {
 
 impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
     fn as_bind_group_shader_type(&self, _images: &RenderAssets<GpuImage>) -> PbrMaterialUniform {
-        let mut flags = PbrMaterialFlags::empty();
-
-        if self.diffuse_texture.is_some() {
-            flags |= PbrMaterialFlags::DIFFUSE_TEXTURE;
-        }
-        if self.emission_texture.is_some() {
-            flags |= PbrMaterialFlags::EMISSION_TEXTURE;
-        }
-        if self.metal_texture.is_some() {
-            flags |= PbrMaterialFlags::METAL_TEXTURE;
-        }
-        if self.occlusion_texture.is_some() {
-            flags |= PbrMaterialFlags::OCCLUSION_TEXTURE;
-        }
-        if self.double_sided {
-            flags |= PbrMaterialFlags::DOUBLE_SIDED;
-        }
-
-        match self.alpha_mode {
-            AlphaMode::Opaque => flags |= PbrMaterialFlags::ALPHA_MODE_OPAQUE,
-            AlphaMode::Mask(_) => flags |= PbrMaterialFlags::ALPHA_MODE_MASK,
-            _ => {}
-        }
+        let flags = PbrMaterialFlags::from(self);
 
         PbrMaterialUniform {
             color: self.color.to_linear().to_f32_array().into(),
@@ -144,21 +138,51 @@ impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct PbrMaterialKey {
-    cull_mode: Option<Face>,
-    alpha_mode: bool,
-}
+pub struct PbrMaterialKey(PbrMaterialFlags);
+// pub struct PbrMaterialKey {
+//     double_sided: bool,
+//     alpha_mode: bool,
+//     diffuse: bool,
+//     emission: bool,
+//     metal: bool,
+//     occlusion: bool,
+//     color: bool,
+// }
 
+impl From<&PbrMaterial> for PbrMaterialFlags {
+    fn from(value: &PbrMaterial) -> Self {
+        let mut flags = PbrMaterialFlags::empty();
+
+        if value.diffuse_texture.is_some() {
+            flags |= PbrMaterialFlags::DIFFUSE_TEXTURE;
+        }
+        if value.emission_texture.is_some() {
+            flags |= PbrMaterialFlags::EMISSION_TEXTURE;
+        }
+        if value.metal_texture.is_some() {
+            flags |= PbrMaterialFlags::METAL_TEXTURE;
+        }
+        if value.occlusion_texture.is_some() {
+            flags |= PbrMaterialFlags::OCCLUSION_TEXTURE;
+        }
+        if value.color_texture.is_some() {
+            flags |= PbrMaterialFlags::COLOR_TEXTURE;
+        }
+        if value.double_sided {
+            flags |= PbrMaterialFlags::DOUBLE_SIDED;
+        }
+
+        match value.alpha_mode {
+            AlphaMode::Opaque => flags |= PbrMaterialFlags::ALPHA_MODE_OPAQUE,
+            AlphaMode::Mask(_) => flags |= PbrMaterialFlags::ALPHA_MODE_MASK,
+            _ => {}
+        };
+        flags
+    }
+}
 impl From<&PbrMaterial> for PbrMaterialKey {
     fn from(material: &PbrMaterial) -> Self {
-        PbrMaterialKey {
-            cull_mode: if material.double_sided {
-                None
-            } else {
-                Some(Face::Back)
-            },
-            alpha_mode: material.alpha_mode == AlphaMode::Blend,
-        }
+        PbrMaterialKey(PbrMaterialFlags::from(material))
     }
 }
 
@@ -170,20 +194,11 @@ impl Material for PbrMaterial {
     fn alpha_mode(&self) -> AlphaMode {
         self.alpha_mode
     }
-
-    /*fn specialize(
-        _pipeline: &bevy::pbr::MaterialPipeline<Self>,
-        descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
-        key: bevy::pbr::MaterialPipelineKey<Self>,
-    ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
-        descriptor.primitive.cull_mode = key.bind_group_data.cull_mode;
-        Ok(())
-    }*/
 }
 
 bitflags::bitflags! {
     #[repr(transparent)]
+    #[derive(Clone, PartialEq, Eq, Hash, Copy)]
     pub struct PbrMaterialFlags: u32 {
         const ALPHA_MODE_MASK    = (1 << 0);
         const ALPHA_MODE_OPAQUE  = (1 << 1);
@@ -192,6 +207,7 @@ bitflags::bitflags! {
         const EMISSION_TEXTURE   = (1 << 4);
         const METAL_TEXTURE      = (1 << 5);
         const OCCLUSION_TEXTURE  = (1 << 6);
+        const COLOR_TEXTURE      = (1 << 7);
     }
 }
 

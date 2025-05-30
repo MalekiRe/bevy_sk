@@ -1,10 +1,9 @@
-use crate::vr_materials::{PbrMaterial, SHADER_HANDLE};
-use bevy::asset::load_internal_asset;
+use bevy::asset::weak_handle;
 use bevy::math::Vec3;
 use bevy::prelude::*;
 use bevy::render::render_resource::{
     Extent3d, ShaderType, TextureDimension, TextureFormat, TextureViewDescriptor,
-    TextureViewDimension, UniformBuffer,
+    TextureViewDimension,
 };
 use bevy::render::storage::ShaderStorageBuffer;
 use std::ops::Mul;
@@ -23,10 +22,8 @@ impl Plugin for SphericalHarmonicsPlugin {
 }
 
 pub const SPHERICAL_HARMONICS_HANDLE: Handle<ShaderStorageBuffer> =
-    Handle::weak_from_u128(0x4e5e4e9a1e9161808328acd635928dbb);
-fn setup_spherical_harmonics(
-    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
-) {
+    weak_handle!("6d0c52b2-461b-4a17-be6d-135349d96124");
+fn setup_spherical_harmonics(mut buffers: ResMut<Assets<ShaderStorageBuffer>>) {
     let sh_coeffs = DEFAULT_LIGHTING;
     buffers.insert(
         &SPHERICAL_HARMONICS_HANDLE,
@@ -35,7 +32,7 @@ fn setup_spherical_harmonics(
 }
 
 fn update_spherical_harmonics(mut buffers: ResMut<Assets<ShaderStorageBuffer>>) {
-    let mut windowed_lighting = DEFAULT_LIGHTING.clone();
+    let mut windowed_lighting = DEFAULT_LIGHTING;
     sh_windowing(&mut windowed_lighting, 1.0);
     if let Some(buffer) = buffers.get_mut(&SPHERICAL_HARMONICS_HANDLE) {
         buffer.set_data(windowed_lighting);
@@ -54,7 +51,7 @@ impl Plugin for SkytexPlugin {
              query: Query<(Entity, &mut Camera3d)>,
              mut images: ResMut<Assets<Image>>| {
                 for (e, _c) in query.iter() {
-                    let mut windowed_lighting = DEFAULT_LIGHTING.clone();
+                    let mut windowed_lighting = DEFAULT_LIGHTING;
                     sh_windowing(&mut windowed_lighting, 1.0);
                     commands.entity(e).insert(bevy::core_pipeline::Skybox {
                         image: images
