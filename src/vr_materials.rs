@@ -1,6 +1,10 @@
 use crate::skytext::SPHERICAL_HARMONICS_HANDLE;
 use bevy::asset::{load_internal_asset, weak_handle};
+use bevy::ecs::component::HookContext;
+use bevy::ecs::system::SystemState;
+use bevy::ecs::world::DeferredWorld;
 use bevy::pbr::check_entities_needing_specialization;
+use bevy::platform::collections::HashMap;
 use bevy::render::mesh::mark_3d_meshes_as_changed_if_their_assets_changed;
 use bevy::render::storage::ShaderStorageBuffer;
 use bevy::{
@@ -25,13 +29,19 @@ impl Plugin for SkMaterialPlugin {
             Shader::from_wgsl
         );
         app.add_plugins(MaterialPlugin::<PbrMaterial>::default());
+        // app.world_mut()
+        //     .resource_mut::<Assets<PbrMaterial>>()
+        //     .insert(MAT_HANDLE.id(), PbrMaterial::default());
         app.register_type::<PbrMaterial>();
-        // if self.replace_standard_material {
-        //     app.add_systems(
-        //         PostUpdate,
-        //         replace_material.before(mark_3d_meshes_as_changed_if_their_assets_changed),
-        //     );
-        // }
+        if self.replace_standard_material {
+            app.init_resource::<HandleMapping>();
+            app.register_required_components::<MeshMaterial3d<StandardMaterial>, MaterialSwapped>();
+            // app.add_systems(
+            //     PostUpdate,
+            //     replace_material_exclusive
+            //         .before(mark_3d_meshes_as_changed_if_their_assets_changed),
+            // );
+        }
     }
 }
 
@@ -44,6 +54,86 @@ fn apply_material(mut commands: Commands, query: Query<(Entity, &NewMaterial)>) 
             .entity(e)
             .insert(m.0.clone())
             .remove::<NewMaterial>();
+    }
+}
+
+#[derive(Component, Default)]
+#[component(on_add = on_swap_add)]
+struct MaterialSwapped;
+fn on_swap_add(mut world: DeferredWorld, ctx: HookContext) {
+    panic!("replace");
+    let Some(id) = world
+        .entity(ctx.entity)
+        .get::<MeshMaterial3d<StandardMaterial>>()
+        .map(|v| v.id())
+    else {
+        return;
+    };
+    world
+        .commands()
+        .entity(ctx.entity)
+        .remove::<MeshMaterial3d<StandardMaterial>>();
+    let has_handle = world.resource_mut::<HandleMapping>().0.contains_key(&id);
+    // let handle = if !has_handle {
+    //     let Some(std_mat) = world.resource::<Assets<StandardMaterial>>().get(id) else {
+    //         return;
+    //     };
+    //     let pbr_mat = PbrMaterial::from(std_mat);
+    //     let handle = world.resource_mut::<Assets<PbrMaterial>>().add(pbr_mat);
+    //     world
+    //         .resource_mut::<HandleMapping>()
+    //         .0
+    //         .insert(id, handle.clone());
+    //     handle
+    // } else {
+    //     world
+    //         .resource::<HandleMapping>()
+    //         .0
+    //         .get(&id)
+    //         .unwrap()
+    //         .clone()
+    // };
+    let handle = MAT_HANDLE.clone();
+    world
+        .commands()
+        .entity(ctx.entity)
+        .insert(MeshMaterial3d(handle));
+}
+
+#[derive(Resource, Default)]
+struct HandleMapping(HashMap<AssetId<StandardMaterial>, Handle<PbrMaterial>>);
+
+fn replace_material_exclusive(world: &mut World) {
+    let entities = world
+        .query_filtered::<Entity, With<MeshMaterial3d<StandardMaterial>>>()
+        .iter(world)
+        .collect::<Vec<_>>();
+    for e in entities {
+        let Some(handle) = world
+            .entity_mut(e)
+            .take::<MeshMaterial3d<StandardMaterial>>()
+        else {
+            continue;
+        };
+        world.init_resource::<HandleMapping>();
+        let pbr_handle = world.resource_scope::<HandleMapping, _>(|world, mut mapping| {
+            mapping
+                .0
+                .entry(handle.id())
+                .or_insert_with(|| {
+                    world.resource_scope::<Assets<StandardMaterial>, _>(|world, std_mats| {
+                        info!(
+                            std_material = ?std_mats.get(&handle.0).unwrap(),
+                            pbr_mat = ?PbrMaterial::from(std_mats.get(&handle.0).unwrap())
+                        );
+                        world
+                            .resource_mut::<Assets<PbrMaterial>>()
+                            .add(std_mats.get(&handle.0).unwrap())
+                    })
+                })
+                .clone()
+        });
+        world.entity_mut(e).insert(MeshMaterial3d(pbr_handle));
     }
 }
 
@@ -79,6 +169,7 @@ fn replace_material(
 struct NewMaterial(MeshMaterial3d<PbrMaterial>);
 
 pub const SHADER_HANDLE: Handle<Shader> = weak_handle!("c0042819-def7-4e25-bb61-62900fbab385");
+pub const MAT_HANDLE: Handle<PbrMaterial> = weak_handle!("9dd6de86-e89b-428e-a82d-0356edb20487");
 
 #[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, Reflect)]
 #[bind_group_data(PbrMaterialKey)]
@@ -110,6 +201,34 @@ pub struct PbrMaterial {
     pub color_texture: Option<Handle<Image>>,
     #[storage(11, read_only, binding_array(11))]
     pub spherical_harmonics: Handle<ShaderStorageBuffer>,
+}
+impl From<Color> for PbrMaterial {
+    fn from(color: Color) -> Self {
+        PbrMaterial {
+            color,
+            ..Default::default()
+        }
+    }
+}
+impl From<&StandardMaterial> for PbrMaterial {
+    fn from(m: &StandardMaterial) -> Self {
+        PbrMaterial {
+            // color: m.base_color,
+            // emission_factor: Default::default(),
+            // metallic: m.metallic,
+            // roughness: m.perceptual_roughness,
+            // tex_scale: 1.0,
+            // alpha_mode: m.alpha_mode,
+            // double_sided: m.double_sided,
+            // spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
+            // diffuse_texture: /*m.diffuse_transmission_texture.clone()*/ Default::default(),
+            // emission_texture: m.emissive_texture.clone(),
+            // metal_texture: m.metallic_roughness_texture.clone(),
+            // occlusion_texture: m.occlusion_texture.clone(),
+            // color_texture: m.base_color_texture.clone(),
+            ..default()
+        }
+    }
 }
 
 #[derive(Clone, Default, ShaderType)]
