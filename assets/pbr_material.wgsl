@@ -5,7 +5,8 @@
     pbr_fragment::pbr_input_from_vertex_output,
     mesh_view_bindings::view,
 }
-
+#import bevy_pbr::mesh_bindings::mesh
+#import bevy_render::bindless::{bindless_samplers_filtering, bindless_textures_2d}
 #import bevy_pbr::{
     forward_io::{VertexOutput, FragmentOutput},
 }
@@ -19,6 +20,26 @@ struct PbrMaterial {
     flags: u32,
 };
 
+struct PbrMaterialBindings {
+    material: u32,
+    diffuse_texture: u32,
+    diffuse_texture_sampler: u32,
+    emission_texture: u32,
+    emission_texture_sampler: u32,
+    metal_texture: u32,
+    metal_texture_sampler: u32,
+    occlusion_texture: u32,
+    occlusion_texture_sampler: u32,
+    color_texture: u32,
+    color_texture_sampler: u32,
+    spherical_harmonics: u32,
+}
+
+#ifdef BINDLESS
+@group(2) @binding(0) var<storage> materials: array<PbrMaterialBindings>;
+@group(2) @binding(10) var<storage> material_data: binding_array<PbrMaterial>;
+// @group(2) @binding(11) var<storage> spherical_harmonics_buffer: binding_array<array<vec3<f32>, 9>>;
+#else
 @group(2) @binding(0)
 var<uniform> material: PbrMaterial;
 @group(2) @binding(1)
@@ -41,7 +62,9 @@ var occlusion_sampler: sampler;
 var color_texture: texture_2d<f32>;
 @group(2) @binding(10)
 var color_sampler: sampler;
-@group(2) @binding(11) var<storage, read> spherical_harmonics_buffer: array<vec3<f32>, 9>;
+@group(2) @binding(11) 
+var<storage, read> spherical_harmonics_buffer: array<vec3<f32>, 9>;
+#endif
 
 // Cubemap is part of the view bindings in Bevy
 // @group(0) @binding(10)
@@ -93,6 +116,28 @@ fn sk_pbr_brdf_appx(roughness: f32, ndotv: f32) -> vec2<f32> {
 
 @fragment
 fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @location(0) vec4<f32> {
+#ifdef BINDLESS
+    let slot = mesh[in.instance_index].material_and_lightmap_bind_group_slot & 0xffffu;
+    let material =  material_data[materials[slot].material];
+    
+    let diffuse_texture = bindless_textures_2d[materials[slot].diffuse_texture];
+    let diffuse_sampler = bindless_samplers_filtering[materials[slot].diffuse_texture_sampler];
+
+
+    let emission_texture = bindless_textures_2d[materials[slot].emission_texture];
+    let emission_sampler = bindless_samplers_filtering[materials[slot].emission_texture_sampler];
+
+    let metal_texture = bindless_textures_2d[materials[slot].metal_texture];
+    let metal_sampler = bindless_samplers_filtering[materials[slot].metal_texture_sampler];
+
+    let occlusion_texture = bindless_textures_2d[materials[slot].occlusion_texture];
+    let occlusion_sampler = bindless_samplers_filtering[materials[slot].occlusion_texture_sampler];
+
+    let color_texture = bindless_textures_2d[materials[slot].color_texture];
+    let color_sampler = bindless_samplers_filtering[materials[slot].color_texture_sampler];
+
+    // let spherical_harmonics_buffer = spherical_harmonics_buffer[materials[slot].spherical_harmonics];
+#endif
     let pbr_input = pbr_input_from_vertex_output(in, is_front, false);
 
     #ifdef VERTEX_UVS_A
@@ -106,32 +151,34 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     if (material.flags & 4u) != 0u {
         #ifdef VERTEX_UVS_A
         albedo *= textureSample(diffuse_texture, diffuse_sampler, uv);
-    #endif
+        #endif
     }
 
-    #ifdef VERTEX_UVS_A
-    albedo *= textureSample(color_texture, color_sampler, uv);
-    #endif
+    if (material.flags & 128u) != 0u {
+        #ifdef VERTEX_UVS_A
+        albedo *= textureSample(color_texture, color_sampler, uv);
+        #endif
+    }
 
     var emissive = material.emission_factor.rgb;
     if (material.flags & 16u) != 0u {
         #ifdef VERTEX_UVS_A
         emissive *= textureSample(emission_texture, emission_sampler, uv).rgb;
-    #endif
+        #endif
     }
 
     var metal_rough = vec2(material.roughness, material.metallic);
     if (material.flags & 32u) != 0u {
-            #ifdef VERTEX_UVS_A
+        #ifdef VERTEX_UVS_A
         metal_rough *= textureSample(metal_texture, metal_sampler, uv).bg;
-    #endif
+        #endif
     }
 
     var ao = 1.0;
     if (material.flags & 64u) != 0u {
-                    #ifdef VERTEX_UVS_A
+        #ifdef VERTEX_UVS_A
         ao = textureSample(occlusion_texture, occlusion_sampler, uv).r;
-    #endif
+        #endif
     }
 
     let N = normalize(pbr_input.world_normal);
@@ -146,9 +193,10 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     var kD = vec3(1.0) - kS;
     kD *= 1.0 - metal_rough.y;
 
-    let irradiance = sk_lighting(N, spherical_harmonics_buffer);
-
-    let diffuse = albedo.rgb * irradiance;
+    // let irradiance = sk_lighting(N, spherical_harmonics_buffer);
+    //
+    // let diffuse = albedo.rgb * irradiance;
+    let diffuse = albedo.rgb;
 
     let mip = metal_rough.x * f32(view.mip_bias);
     //let prefilteredColor = diffuse;

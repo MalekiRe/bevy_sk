@@ -1,16 +1,19 @@
+use bevy::asset::weak_handle;
 use bevy::math::{Quat, Vec3};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, Mesh, MeshAabb};
 use bevy::render::primitives::Aabb;
 use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::render_resource::PrimitiveTopology;
+use bevy::render::render_resource::{Extent3d, PrimitiveTopology, TextureDimension, TextureFormat};
 
-use bevy_mod_xr::hands::{HandBone, XrHandBoneEntities, XrHandBoneRadius, HAND_JOINT_COUNT};
-use bevy_mod_xr::session::XrSessionCreatedEvent;
+use bevy_mod_xr::hands::{HAND_JOINT_COUNT, HandBone, XrHandBoneEntities, XrHandBoneRadius};
+use bevy_mod_xr::session::XrSessionCreated;
 use bevy_mod_xr::spaces::XrSpaceLocationFlags;
 use std::f32::consts::{PI, SQRT_2};
 
 const RING_COUNT: usize = SINCOS_ANGLES.len();
+pub const GRADIENT_TEXTURE_HANDLE: Handle<Image> =
+    weak_handle!("14ca4cdb-3d9f-4338-af99-3c0554806440");
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
@@ -109,6 +112,7 @@ impl SkHandFinger {
         let mut indices = Vec::new();
 
         // Start cap indices
+        #[expect(clippy::identity_op)]
         indices.extend_from_slice(&[
             (start_vert + 2),
             (start_vert + 1),
@@ -141,6 +145,7 @@ impl SkHandFinger {
         }
 
         // End cap indices
+        #[expect(clippy::identity_op)]
         indices.extend_from_slice(&[
             (end_vert + 0),
             (end_vert + 1),
@@ -162,6 +167,39 @@ impl SkHandFinger {
         indices
     }
 
+    fn gen_uvs(&self, finger: Finger) -> Vec<[f32; 2]> {
+        const TEXTURE_COORDINATES_Y: [f32; 6] = [
+            1f32,
+            1f32 - 0.44f32,
+            1f32 - 0.69f32,
+            1f32 - 0.85f32,
+            1f32 - 0.96f32,
+            1f32 - 0.99f32,
+        ];
+        let x = (finger as u8 as f32 / Finger::NUM as f32) + (0.5 / Finger::NUM as f32);
+        let mut uvs = Vec::new();
+        for joint in FingerJoint::ALL {
+            let y = match finger {
+                Finger::Thumb => TEXTURE_COORDINATES_Y[joint.previous_in_chain() as usize],
+                _ => TEXTURE_COORDINATES_Y[joint as usize],
+            };
+            // Push colors for each vertex
+            // for _v in 0..RING_COUNT {
+            for _ in 0..RING_COUNT {
+                uvs.push([x, y]);
+            }
+            // }
+            if matches!(joint, FingerJoint::Tip) {
+                for _ in 0..RING_COUNT {
+                    uvs.push([x, y]);
+                }
+            }
+        }
+        // Extra vertex color
+        uvs.push([x, 0.0]);
+        uvs
+    }
+
     fn gen_vertex_colors(&self) -> Vec<[f32; 4]> {
         fn get_color(joint: FingerJoint) -> [f32; 4] {
             let factor = (joint as usize as f32) / (FingerJoint::NUM as f32 - 1.0);
@@ -169,14 +207,23 @@ impl SkHandFinger {
         }
         let mut colors = Vec::new();
         for joint in FingerJoint::ALL {
-            let color = get_color(joint);
             // Push colors for each vertex
-            for _v in 0..RING_COUNT {
-                colors.push(color);
+            // for _v in 0..RING_COUNT {
+            for v in 0..RING_COUNT {
+                if v < 3 {
+                    colors.push([1.0, 1.0, 1.0, 1.0]);
+                } else {
+                    colors.push([0.784, 0.784, 0.784, 1.0]); // Light gray (200/255)
+                }
             }
+            // }
             if matches!(joint, FingerJoint::Tip) {
-                for _v in 0..RING_COUNT {
-                    colors.push(color);
+                for v in 0..RING_COUNT {
+                    if v < 3 {
+                        colors.push([1.0, 1.0, 1.0, 1.0]);
+                    } else {
+                        colors.push([0.784, 0.784, 0.784, 1.0]); // Light gray (200/255)
+                    }
                 }
             }
         }
@@ -198,7 +245,6 @@ impl SkHandFinger {
         for joint in FingerJoint::ALL {
             let pose_prev = data[self.0.hand_bone(&joint.previous_in_chain()) as usize];
             let pose = data[self.0.hand_bone(&joint) as usize];
-            // what? why?
             let orientation = pose_prev.orientation.slerp(pose.orientation, 0.5);
 
             // Scaling offset to preserve volume
@@ -282,12 +328,13 @@ fn setup_hand_mesh(
     for e in &hands {
         info!("creating hand");
         let mut hand_mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
-        hand_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0,0.0,0.0]]);
+        hand_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0, 0.0, 0.0]]);
         commands.entity(e).insert((
             Mesh3d(meshes.add(hand_mesh)),
             MeshMaterial3d(materials.add(StandardMaterial {
                 unlit: true,
                 alpha_mode: AlphaMode::Blend,
+                base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
                 ..default()
             })),
             Transform::from_xyz(0.0, 0.0, 0.0),
@@ -322,10 +369,10 @@ pub struct HandPlugin;
 
 impl Plugin for HandPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Last,
-            setup_hand_mesh.run_if(on_event::<XrSessionCreatedEvent>),
-        );
+        app.world_mut()
+            .resource_mut::<Assets<Image>>()
+            .insert(&GRADIENT_TEXTURE_HANDLE, create_gradient_texture());
+        app.add_systems(XrSessionCreated, setup_hand_mesh);
         app.add_systems(Update, update_hand_mesh);
     }
 }
@@ -352,6 +399,7 @@ fn update_hand_mesh(
         let mut positions = Vec::with_capacity(vert_count);
         let mut normals = Vec::with_capacity(vert_count);
         let mut colors = Vec::with_capacity(vert_count);
+        let mut uvs = Vec::with_capacity(vert_count);
         let mut indices = Vec::new();
 
         let mut i = 0;
@@ -366,6 +414,7 @@ fn update_hand_mesh(
             // Doesn't technically need to be re-generated every frame
             indices.extend(f.indices(i));
             colors.extend(f.gen_vertex_colors());
+            uvs.extend(f.gen_uvs(finger));
 
             // This does need to be re-generated every frame
             let (poses, norms) = f.gen_vertex_positions_and_normals(&data);
@@ -388,4 +437,31 @@ fn update_hand_mesh(
             *aabb = bb
         }
     }
+}
+
+fn create_gradient_texture() -> Image {
+    let width = 16;
+    let height = 16;
+    let mut gradient = Vec::with_capacity(width * height * 4);
+
+    for y in 0..height {
+        let t = 1.0 - (y as f32 / (height - 1) as f32);
+        let color = get_gradient_color(t);
+
+        for _ in 0..width {
+            gradient.extend_from_slice(&color);
+        }
+    }
+
+    Image::new(
+        Extent3d {
+            width: width as u32,
+            height: height as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        gradient,
+        TextureFormat::Rgba8UnormSrgb,
+        Default::default(),
+    )
 }
