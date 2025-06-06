@@ -16,7 +16,6 @@ struct PbrMaterial {
     emission_factor: vec4<f32>,
     metallic: f32,
     roughness: f32,
-    tex_scale: f32,
     flags: u32,
 };
 
@@ -149,6 +148,7 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     #ifdef VERTEX_COLORS
     albedo *= in.color;
     #endif
+
     if (material.flags & 4u) != 0u {
         #ifdef VERTEX_UVS_A
         albedo *= textureSample(diffuse_texture, diffuse_sampler, uv);
