@@ -60,9 +60,7 @@ var occlusion_texture: texture_2d<f32>;
 var occlusion_sampler: sampler;
 @group(2) @binding(9)
 var color_texture: texture_2d<f32>;
-@group(2) @binding(10)
-var color_sampler: sampler;
-@group(2) @binding(11) 
+@group(2) @binding(10) 
 var<storage, read> spherical_harmonics_buffer: array<vec3<f32>, 9>;
 #endif
 
@@ -141,7 +139,10 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     let pbr_input = pbr_input_from_vertex_output(in, is_front, false);
 
     #ifdef VERTEX_UVS_A
-    let uv = in.uv * material.tex_scale;
+    var uv = in.uv;
+    if (material.flags & 128u) != 0u {
+        uv = vec2(1.0) - uv;
+    }
     #endif
 
     var albedo = material.color;
@@ -154,11 +155,6 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
         #endif
     }
 
-    if (material.flags & 128u) != 0u {
-        #ifdef VERTEX_UVS_A
-        albedo *= textureSample(color_texture, color_sampler, uv);
-        #endif
-    }
 
     var emissive = material.emission_factor.rgb;
     if (material.flags & 16u) != 0u {
