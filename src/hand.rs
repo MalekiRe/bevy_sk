@@ -7,7 +7,6 @@ use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, PrimitiveTopology, TextureDimension, TextureFormat};
 
 use bevy_mod_xr::hands::{HAND_JOINT_COUNT, HandBone, XrHandBoneEntities, XrHandBoneRadius};
-use bevy_mod_xr::session::XrSessionCreated;
 use bevy_mod_xr::spaces::XrSpaceLocationFlags;
 use std::f32::consts::{PI, SQRT_2};
 
@@ -77,6 +76,10 @@ impl Finger {
         }
     }
 }
+#[derive(Component)]
+pub struct HandMesh;
+#[derive(Component)]
+struct HandMeshCreated;
 
 #[derive(Clone, Copy)]
 struct HandJoint {
@@ -111,39 +114,6 @@ impl SkHandFinger {
         let start_vert = self.start_vert(index) as u16;
         let mut indices = Vec::new();
 
-        // Start cap indices
-        #[expect(clippy::identity_op)]
-        indices.extend_from_slice(&[
-            (start_vert + 2),
-            (start_vert + 1),
-            (start_vert + 0),
-            (start_vert + 4),
-            (start_vert + 3),
-            (start_vert + 6),
-            (start_vert + 5),
-            (start_vert + 4),
-            (start_vert + 6),
-        ]);
-
-        // Tube faces indices
-        for joint in 0..FingerJoint::NUM as u16 {
-            for ring in 0..RING_COUNT as u16 {
-                // huh?
-                // if ring == 2 {
-                //     continue;
-                // }
-                let curr1 = start_vert + (joint * RING_COUNT as u16 + ring);
-                let next1 = start_vert + (joint + 1) * RING_COUNT as u16 + ring;
-                let curr2 = start_vert + (joint * RING_COUNT as u16 + (ring + 1));
-                let next2 = start_vert + (joint + 1) * RING_COUNT as u16 + (ring + 1);
-
-                if ring == RING_COUNT as u16 - 1 {
-                    continue;
-                }
-                indices.extend_from_slice(&[next2, next1, curr1, curr2, next2, curr1]);
-            }
-        }
-
         // End cap indices
         #[expect(clippy::identity_op)]
         indices.extend_from_slice(&[
@@ -164,7 +134,40 @@ impl SkHandFinger {
             (end_vert + 7),
         ]);
 
-        indices
+        // Tube faces indices
+        for joint in (0..FingerJoint::NUM as u16).rev() {
+            for ring in (0..RING_COUNT as u16).rev() {
+                // huh?
+                // if ring == 2 {
+                //     continue;
+                // }
+                let curr1 = start_vert + (joint * RING_COUNT as u16 + ring);
+                let next1 = start_vert + (joint + 1) * RING_COUNT as u16 + ring;
+                let curr2 = start_vert + (joint * RING_COUNT as u16 + (ring + 1));
+                let next2 = start_vert + (joint + 1) * RING_COUNT as u16 + (ring + 1);
+
+                if ring == RING_COUNT as u16 - 1 {
+                    continue;
+                }
+                indices.extend_from_slice(&[next2, next1, curr1, curr2, next2, curr1]);
+            }
+        }
+
+        // Start cap indices
+        #[expect(clippy::identity_op)]
+        indices.extend_from_slice(&[
+            (start_vert + 2),
+            (start_vert + 1),
+            (start_vert + 0),
+            (start_vert + 4),
+            (start_vert + 3),
+            (start_vert + 6),
+            (start_vert + 5),
+            (start_vert + 4),
+            (start_vert + 6),
+        ]);
+
+        indices.chunks(3).rev().flatten().copied().collect()
     }
 
     fn gen_uvs(&self, finger: Finger) -> Vec<[f32; 2]> {
@@ -320,25 +323,32 @@ fn gen_sincos_and_sincos_norm() -> (
 }
 
 fn setup_hand_mesh(
-    hands: Query<Entity, With<XrHandBoneEntities>>,
+    hands: Query<
+        Entity,
+        (
+            With<XrHandBoneEntities>,
+            // With<HandMesh>,
+            Without<HandMeshCreated>,
+        ),
+    >,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for e in &hands {
-        info!("creating hand");
         let mut hand_mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
         hand_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0, 0.0, 0.0]]);
         commands.entity(e).insert((
             Mesh3d(meshes.add(hand_mesh)),
             MeshMaterial3d(materials.add(StandardMaterial {
-                unlit: true,
                 alpha_mode: AlphaMode::Blend,
                 base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
+                perceptual_roughness: 1.0,
                 ..default()
             })),
             Transform::from_xyz(0.0, 0.0, 0.0),
             Aabb::default(),
+            HandMeshCreated,
         ));
     }
 }
@@ -372,7 +382,7 @@ impl Plugin for HandPlugin {
         app.world_mut()
             .resource_mut::<Assets<Image>>()
             .insert(&GRADIENT_TEXTURE_HANDLE, create_gradient_texture());
-        app.add_systems(XrSessionCreated, setup_hand_mesh);
+        app.add_systems(PreUpdate, setup_hand_mesh);
         app.add_systems(Update, update_hand_mesh);
     }
 }
@@ -430,6 +440,7 @@ fn update_hand_mesh(
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
         let bb = mesh.compute_aabb();
         meshes.insert(mesh_handle, mesh);
 

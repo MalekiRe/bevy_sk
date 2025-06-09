@@ -121,7 +121,7 @@ impl From<&StandardMaterial> for PbrMaterial {
     fn from(m: &StandardMaterial) -> Self {
         PbrMaterial {
             color: m.base_color,
-            emission_factor: Default::default(),
+            emission_factor: m.emissive.into(),
             metallic: m.metallic,
             roughness: m.perceptual_roughness,
             alpha_mode: m.alpha_mode,

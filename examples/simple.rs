@@ -24,10 +24,10 @@ fn main() {
         .add_plugins(SphericalHarmonicsPlugin)
         .add_plugins(HandPlugin)
         .add_plugins(SkMaterialPlugin {
-            replace_standard_material: false,
+            replace_standard_material: true,
         })
         .add_systems(XrSessionCreated, set_requested_refresh_rate)
-        .add_systems(Startup, setup_2)
+        .add_systems(Startup, setup)
         .add_systems(Startup, set_msaa)
         .add_systems(
             PostUpdate,
@@ -52,42 +52,19 @@ fn set_requested_refresh_rate(session: ResMut<OxrSession>) {
         error!("errror while requesting refresh rate: {err}");
     }
 }
-fn setup_2(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<PbrMaterial>>,
-) {
-    let mut white = PbrMaterial::from(Color::WHITE); // circular base
-    commands.spawn((
-        Mesh3d(meshes.add(Circle::new(4.0))),
-        MeshMaterial3d(materials.add(white)),
-        Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
-    ));
-    let mut cube_mat: PbrMaterial = Color::srgb_u8(124, 144, 255).into();
-    // cube
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(0.1, 0.1, 0.1))),
-        MeshMaterial3d(materials.add(cube_mat)),
-        Transform::from_xyz(0.0, 0.7, 0.0),
-    ));
-}
-
 /// set up a simple 3D scene
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<PbrMaterial>>,
 ) {
-    let mut white: StandardMaterial = Color::WHITE.into();
-    white.unlit = true;
-    // circular base
+    let white = PbrMaterial::from(Color::WHITE); // circular base
     commands.spawn((
         Mesh3d(meshes.add(Circle::new(4.0))),
         MeshMaterial3d(materials.add(white)),
         Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
     ));
-    let mut cube_mat: StandardMaterial = Color::srgb_u8(124, 144, 255).into();
-    cube_mat.unlit = false;
+    let cube_mat: PbrMaterial = Color::srgb_u8(124, 144, 255).into();
     // cube
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(0.1, 0.1, 0.1))),
