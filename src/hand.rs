@@ -432,9 +432,6 @@ fn update_hand_mesh(
             normals.extend(norms);
             i += 1;
         }
-        if positions.is_empty() {
-            continue;
-        }
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
         mesh.insert_indices(Indices::U16(indices));
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
