@@ -1,6 +1,10 @@
 //! A simple 3D scene with light shining over a cube sitting on a plane.
 
+use std::time::Duration;
+
+use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
+use bevy::winit::WinitPlugin;
 use bevy_mod_openxr::exts::OxrExtensions;
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_openxr::{add_xr_plugins, init::OxrInitPlugin};
@@ -11,15 +15,20 @@ use bevy_sk::vr_materials::{PbrMaterial, SkMaterialPlugin};
 
 fn main() {
     App::new()
-        .add_plugins(add_xr_plugins(DefaultPlugins).set(OxrInitPlugin {
-            exts: {
-                let mut exts = OxrExtensions::default();
-                exts.fb_display_refresh_rate = true;
-                exts.enable_hand_tracking();
-                exts
-            },
-            ..default()
-        }))
+        .add_plugins(
+            add_xr_plugins(DefaultPlugins)
+                .set(OxrInitPlugin {
+                    exts: {
+                        let mut exts = OxrExtensions::default();
+                        exts.fb_display_refresh_rate = true;
+                        exts.enable_hand_tracking();
+                        exts
+                    },
+                    ..default()
+                })
+                .disable::<WinitPlugin>()
+                .add(ScheduleRunnerPlugin::run_loop(Duration::new(0, 0))),
+        )
         .add_plugins(SkytexPlugin)
         .add_plugins(SphericalHarmonicsPlugin)
         .add_plugins(HandPlugin)

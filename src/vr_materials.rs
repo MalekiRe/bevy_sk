@@ -92,7 +92,6 @@ pub struct PbrMaterial {
     pub roughness: f32,
     pub alpha_mode: AlphaMode,
     pub double_sided: bool,
-    pub use_stereokit_uvs: bool,
 
     #[texture(1)]
     #[sampler(2)]
@@ -106,7 +105,7 @@ pub struct PbrMaterial {
     #[texture(7)]
     #[sampler(8)]
     pub occlusion_texture: Option<Handle<Image>>,
-    #[storage(10, read_only, binding_array(11))]
+    #[storage(9, read_only, binding_array(11))]
     pub spherical_harmonics: Handle<ShaderStorageBuffer>,
 }
 impl From<Color> for PbrMaterial {
@@ -126,12 +125,11 @@ impl From<&StandardMaterial> for PbrMaterial {
             roughness: m.perceptual_roughness,
             alpha_mode: m.alpha_mode,
             double_sided: m.double_sided,
-            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
             diffuse_texture: m.base_color_texture.clone(),
             emission_texture: m.emissive_texture.clone(),
             metal_texture: m.metallic_roughness_texture.clone(),
             occlusion_texture: m.occlusion_texture.clone(),
-            use_stereokit_uvs: false,
+            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
         }
     }
 }
@@ -180,9 +178,6 @@ impl From<&PbrMaterial> for PbrMaterialFlags {
         if value.double_sided {
             flags |= PbrMaterialFlags::DOUBLE_SIDED;
         }
-        if value.use_stereokit_uvs {
-            flags |= PbrMaterialFlags::SK_UVS;
-        }
 
         match value.alpha_mode {
             AlphaMode::Opaque => flags |= PbrMaterialFlags::ALPHA_MODE_OPAQUE,
@@ -219,7 +214,6 @@ bitflags::bitflags! {
         const EMISSION_TEXTURE   = (1 << 4);
         const METAL_TEXTURE      = (1 << 5);
         const OCCLUSION_TEXTURE  = (1 << 6);
-        const SK_UVS             = (1 << 7);
     }
 }
 
@@ -232,12 +226,11 @@ impl Default for PbrMaterial {
             roughness: 0.0,
             alpha_mode: AlphaMode::Opaque,
             double_sided: false,
-            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
             diffuse_texture: None,
             emission_texture: None,
             metal_texture: None,
             occlusion_texture: None,
-            use_stereokit_uvs: false,
+            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
         }
     }
 }

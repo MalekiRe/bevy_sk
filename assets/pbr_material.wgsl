@@ -29,15 +29,17 @@ struct PbrMaterialBindings {
     metal_texture_sampler: u32,
     occlusion_texture: u32,
     occlusion_texture_sampler: u32,
-    color_texture: u32,
-    color_texture_sampler: u32,
-    spherical_harmonics: u32,
+    // spherical_harmonics: u32,
 }
+
+// struct Test {
+//     coefficients: array<vec3<f32>, 9>
+// }
 
 #ifdef BINDLESS
 @group(2) @binding(0) var<storage> materials: array<PbrMaterialBindings>;
 @group(2) @binding(10) var<storage> material_data: binding_array<PbrMaterial>;
-// @group(2) @binding(11) var<storage> spherical_harmonics_buffer: binding_array<array<vec3<f32>, 9>>;
+// @group(2) @binding(11) var<storage> spherical_harmonics_buffer: binding_array<Test>;
 #else
 @group(2) @binding(0)
 var<uniform> material: PbrMaterial;
@@ -57,9 +59,7 @@ var metal_sampler: sampler;
 var occlusion_texture: texture_2d<f32>;
 @group(2) @binding(8)
 var occlusion_sampler: sampler;
-@group(2) @binding(9)
-var color_texture: texture_2d<f32>;
-@group(2) @binding(10) 
+@group(2) @binding(9) 
 var<storage, read> spherical_harmonics_buffer: array<vec3<f32>, 9>;
 #endif
 
@@ -130,18 +130,12 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     let occlusion_texture = bindless_textures_2d[materials[slot].occlusion_texture];
     let occlusion_sampler = bindless_samplers_filtering[materials[slot].occlusion_texture_sampler];
 
-    let color_texture = bindless_textures_2d[materials[slot].color_texture];
-    let color_sampler = bindless_samplers_filtering[materials[slot].color_texture_sampler];
-
-    // let spherical_harmonics_buffer = spherical_harmonics_buffer[materials[slot].spherical_harmonics];
+    // let spherical_harmonics_buffer = spherical_harmonics_buffer[materials[slot].spherical_harmonics].inner;
 #endif
     let pbr_input = pbr_input_from_vertex_output(in, is_front, false);
 
     #ifdef VERTEX_UVS_A
-    var uv = in.uv;
-    if (material.flags & 128u) != 0u {
-        uv = vec2(1.0) - uv;
-    }
+    let uv = in.uv;
     #endif
 
     var albedo = material.color;
@@ -189,10 +183,9 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     var kD = vec3(1.0) - kS;
     kD *= 1.0 - metal_rough.y;
 
-    // let irradiance = sk_lighting(N, spherical_harmonics_buffer);
-    //
-    // let diffuse = albedo.rgb * irradiance;
-    let diffuse = albedo.rgb;
+    let irradiance = sk_lighting(N, spherical_harmonics_buffer);
+
+    let diffuse = albedo.rgb * irradiance;
 
     let mip = metal_rough.x * f32(view.mip_bias);
     //let prefilteredColor = diffuse;
@@ -202,7 +195,7 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     let specular = (F * envBRDF.x + envBRDF.y);
 
     var color = (kD * diffuse + specular) * ao;
-    //color += emissive;
+    color += emissive;
 
     return vec4(color, albedo.a);
 }
