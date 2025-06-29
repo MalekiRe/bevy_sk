@@ -81,6 +81,7 @@ pub const DEFAULT_LIGHTING: SphericalHarmonics = SphericalHarmonics {
 
 // tex_gen_cubemap_sh(lighting, 16, 0.3f);
 #[derive(ShaderType, Default, Copy, Clone, Debug, PartialEq, Reflect)]
+#[repr(C)]
 pub struct SphericalHarmonics {
     pub coefficients: [Vec3; 9],
 }
@@ -267,22 +268,14 @@ fn math_cubemap_corner(i: i32) -> Vec3 {
             if u != 0 { 1.0 } else { -1.0 }.mul(neg)
         },
         if nx != 0 || nz != 0 {
-            if v != 0 {
-                1.0
-            } else {
-                -1.0
-            }
+            if v != 0 { 1.0 } else { -1.0 }
         } else {
             neg
         },
         if nx != 0 {
             if u != 0 { -1.0 } else { 1.0 }.mul(neg)
         } else if ny != 0 {
-            if v != 0 {
-                1.0
-            } else {
-                -1.0
-            }
+            if v != 0 { 1.0 } else { -1.0 }
         } else {
             neg
         },

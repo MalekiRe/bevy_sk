@@ -90,7 +90,6 @@ pub struct PbrMaterial {
     pub emission_factor: Color,
     pub metallic: f32,
     pub roughness: f32,
-    pub tex_scale: f32,
     pub alpha_mode: AlphaMode,
     pub double_sided: bool,
 
@@ -106,10 +105,7 @@ pub struct PbrMaterial {
     #[texture(7)]
     #[sampler(8)]
     pub occlusion_texture: Option<Handle<Image>>,
-    #[texture(9)]
-    #[sampler(10)]
-    pub color_texture: Option<Handle<Image>>,
-    #[storage(11, read_only, binding_array(11))]
+    #[storage(9, read_only, binding_array(11))]
     pub spherical_harmonics: Handle<ShaderStorageBuffer>,
 }
 impl From<Color> for PbrMaterial {
@@ -124,18 +120,16 @@ impl From<&StandardMaterial> for PbrMaterial {
     fn from(m: &StandardMaterial) -> Self {
         PbrMaterial {
             color: m.base_color,
-            emission_factor: Default::default(),
+            emission_factor: m.emissive.into(),
             metallic: m.metallic,
             roughness: m.perceptual_roughness,
-            tex_scale: 1.0,
             alpha_mode: m.alpha_mode,
             double_sided: m.double_sided,
-            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
-            diffuse_texture: /*m.diffuse_transmission_texture.clone()*/ Default::default(),
+            diffuse_texture: m.base_color_texture.clone(),
             emission_texture: m.emissive_texture.clone(),
             metal_texture: m.metallic_roughness_texture.clone(),
             occlusion_texture: m.occlusion_texture.clone(),
-            color_texture: m.base_color_texture.clone(),
+            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
         }
     }
 }
@@ -146,7 +140,6 @@ pub struct PbrMaterialUniform {
     pub emission_factor: Vec4,
     pub metallic: f32,
     pub roughness: f32,
-    pub tex_scale: f32,
     pub flags: u32,
 }
 
@@ -159,7 +152,6 @@ impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
             emission_factor: self.emission_factor.to_linear().to_f32_array().into(),
             metallic: self.metallic,
             roughness: self.roughness,
-            tex_scale: self.tex_scale,
             flags: flags.bits(),
         }
     }
@@ -167,16 +159,6 @@ impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PbrMaterialKey(PbrMaterialFlags);
-// pub struct PbrMaterialKey {
-//     double_sided: bool,
-//     alpha_mode: bool,
-//     diffuse: bool,
-//     emission: bool,
-//     metal: bool,
-//     occlusion: bool,
-//     color: bool,
-// }
-
 impl From<&PbrMaterial> for PbrMaterialFlags {
     fn from(value: &PbrMaterial) -> Self {
         let mut flags = PbrMaterialFlags::empty();
@@ -192,9 +174,6 @@ impl From<&PbrMaterial> for PbrMaterialFlags {
         }
         if value.occlusion_texture.is_some() {
             flags |= PbrMaterialFlags::OCCLUSION_TEXTURE;
-        }
-        if value.color_texture.is_some() {
-            flags |= PbrMaterialFlags::COLOR_TEXTURE;
         }
         if value.double_sided {
             flags |= PbrMaterialFlags::DOUBLE_SIDED;
@@ -235,7 +214,6 @@ bitflags::bitflags! {
         const EMISSION_TEXTURE   = (1 << 4);
         const METAL_TEXTURE      = (1 << 5);
         const OCCLUSION_TEXTURE  = (1 << 6);
-        const COLOR_TEXTURE      = (1 << 7);
     }
 }
 
@@ -246,15 +224,13 @@ impl Default for PbrMaterial {
             emission_factor: Color::BLACK,
             metallic: 0.0,
             roughness: 0.0,
-            tex_scale: 1.0,
             alpha_mode: AlphaMode::Opaque,
             double_sided: false,
-            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
             diffuse_texture: None,
             emission_texture: None,
             metal_texture: None,
             occlusion_texture: None,
-            color_texture: None,
+            spherical_harmonics: SPHERICAL_HARMONICS_HANDLE,
         }
     }
 }
