@@ -5,6 +5,8 @@
     pbr_fragment::pbr_input_from_vertex_output,
     mesh_view_bindings::view,
 }
+#import bevy_pbr::pbr_functions
+
 #import bevy_pbr::mesh_bindings::mesh
 #import bevy_render::bindless::{bindless_samplers_filtering, bindless_textures_2d}
 #import bevy_pbr::{
@@ -16,9 +18,12 @@ struct PbrMaterial {
     emission_factor: vec4<f32>,
     metallic: f32,
     roughness: f32,
+    alpha_cutoff:f32,
     flags: u32,
 };
 
+
+#ifdef BINDLESS
 struct PbrMaterialBindings {
     material: u32,
     diffuse_texture: u32,
@@ -32,11 +37,6 @@ struct PbrMaterialBindings {
     // spherical_harmonics: u32,
 }
 
-// struct Test {
-//     coefficients: array<vec3<f32>, 9>
-// }
-
-#ifdef BINDLESS
 @group(2) @binding(0) var<storage> materials: array<PbrMaterialBindings>;
 @group(2) @binding(10) var<storage> material_data: binding_array<PbrMaterial>;
 // @group(2) @binding(11) var<storage> spherical_harmonics_buffer: binding_array<Test>;
@@ -111,6 +111,22 @@ fn sk_pbr_brdf_appx(roughness: f32, ndotv: f32) -> vec2<f32> {
     return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
+fn alpha_discard(mat: PbrMaterial,color:vec4<f32>) {
+    if (mat.flags & 1) != 0 {
+        if color.a < mat.alpha_cutoff {
+            discard;
+        }
+    } else if (mat.flags & 128) != 0 {
+        if color.a < 0.05 {
+            discard;
+        }
+    } else if (mat.flags & 256) != 0 {
+        if all(color < vec4(0.05)) {
+            discard;
+        }
+    }
+}
+
 @fragment
 fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @location(0) vec4<f32> {
 #ifdef BINDLESS
@@ -132,6 +148,9 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
 
     // let spherical_harmonics_buffer = spherical_harmonics_buffer[materials[slot].spherical_harmonics].inner;
 #endif
+#ifdef VISIBILITY_RANGE_DITHER
+    pbr_functions::visibility_range_dither(in.position, in.visibility_range_dither);
+#endif
     let pbr_input = pbr_input_from_vertex_output(in, is_front, false);
 
     #ifdef VERTEX_UVS_A
@@ -148,7 +167,10 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
         albedo *= textureSample(diffuse_texture, diffuse_sampler, uv);
         #endif
     }
-
+    alpha_discard(material,albedo);
+// if albedo.a < 0.5 {
+// discard;
+// }
 
     var emissive = material.emission_factor.rgb;
     if (material.flags & 16u) != 0u {

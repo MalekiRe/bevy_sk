@@ -25,6 +25,12 @@ impl Plugin for SkMaterialPlugin {
             "../assets/pbr_material.wgsl",
             Shader::from_wgsl
         );
+        load_internal_asset!(
+            app,
+            SHADER_PREPASS_HANDLE,
+            "../assets/pbr_material_prepass.wgsl",
+            Shader::from_wgsl
+        );
         app.add_plugins(MaterialPlugin::<PbrMaterial>::default());
         app.register_type::<PbrMaterial>();
         if self.replace_standard_material {
@@ -80,6 +86,9 @@ fn on_swap_add(mut world: DeferredWorld, ctx: HookContext) {
 #[derive(Resource, Default)]
 struct HandleMapping(HashMap<AssetId<StandardMaterial>, Handle<PbrMaterial>>);
 pub const SHADER_HANDLE: Handle<Shader> = weak_handle!("c0042819-def7-4e25-bb61-62900fbab385");
+pub const SHADER_PREPASS_HANDLE: Handle<Shader> = weak_handle!(
+    "6612069e-ef8e-4367-bc73-ad0af6a47521"
+);
 
 #[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, Reflect)]
 #[bind_group_data(PbrMaterialKey)]
@@ -95,17 +104,22 @@ pub struct PbrMaterial {
 
     #[texture(1)]
     #[sampler(2)]
+    #[dependency]
     pub diffuse_texture: Option<Handle<Image>>,
     #[texture(3)]
     #[sampler(4)]
+    #[dependency]
     pub emission_texture: Option<Handle<Image>>,
     #[texture(5)]
     #[sampler(6)]
+    #[dependency]
     pub metal_texture: Option<Handle<Image>>,
     #[texture(7)]
     #[sampler(8)]
+    #[dependency]
     pub occlusion_texture: Option<Handle<Image>>,
     #[storage(9, read_only, binding_array(11))]
+    #[dependency]
     pub spherical_harmonics: Handle<ShaderStorageBuffer>,
 }
 impl From<Color> for PbrMaterial {
@@ -140,6 +154,7 @@ pub struct PbrMaterialUniform {
     pub emission_factor: Vec4,
     pub metallic: f32,
     pub roughness: f32,
+    pub alpha_cutoff: f32,
     pub flags: u32,
 }
 
@@ -152,6 +167,11 @@ impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
             emission_factor: self.emission_factor.to_linear().to_f32_array().into(),
             metallic: self.metallic,
             roughness: self.roughness,
+            alpha_cutoff: if let AlphaMode::Mask(v) = self.alpha_mode {
+                v
+            } else {
+                1.0
+            },
             flags: flags.bits(),
         }
     }
@@ -178,6 +198,15 @@ impl From<&PbrMaterial> for PbrMaterialFlags {
         if value.double_sided {
             flags |= PbrMaterialFlags::DOUBLE_SIDED;
         }
+        if matches!(
+            value.alpha_mode,
+            AlphaMode::Blend | AlphaMode::Add | AlphaMode::AlphaToCoverage
+        ) {
+            flags |= PbrMaterialFlags::ALPHA_CUTOFF;
+        }
+        if matches!(value.alpha_mode, AlphaMode::Premultiplied) {
+            flags |= PbrMaterialFlags::ALPHA_CUTOFF_FULL;
+        }
 
         match value.alpha_mode {
             AlphaMode::Opaque => flags |= PbrMaterialFlags::ALPHA_MODE_OPAQUE,
@@ -198,6 +227,10 @@ impl Material for PbrMaterial {
         SHADER_HANDLE.into()
     }
 
+    fn prepass_fragment_shader() -> ShaderRef {
+        SHADER_PREPASS_HANDLE.into()
+    }
+
     fn alpha_mode(&self) -> AlphaMode {
         self.alpha_mode
     }
@@ -214,6 +247,8 @@ bitflags::bitflags! {
         const EMISSION_TEXTURE   = (1 << 4);
         const METAL_TEXTURE      = (1 << 5);
         const OCCLUSION_TEXTURE  = (1 << 6);
+        const ALPHA_CUTOFF       = (1 << 7);
+        const ALPHA_CUTOFF_FULL  = (1 << 8);
     }
 }
 
