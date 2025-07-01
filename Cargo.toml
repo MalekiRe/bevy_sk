@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # this now depends on the bevy feature flags that bevy_mod_xr sets, fun!
-bevy = { version = "0.16", default-features = false,features = ["tonemapping_luts"] }
+bevy = { version = "0.16", default-features = false, features = [] }
 bevy_mod_xr = "0.3"
 bitflags = "2.6.0"
 
