@@ -3,6 +3,10 @@ name = "bevy_sk"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["stochastic_alpha"]
+stochastic_alpha = []
+
 [dependencies]
 # this now depends on the bevy feature flags that bevy_mod_xr sets, fun!
 bevy = { version = "0.16", default-features = false, features = [] }

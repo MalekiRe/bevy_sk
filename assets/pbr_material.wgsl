@@ -20,7 +20,6 @@ struct PbrMaterial {
     metallic: f32,
     roughness: f32,
     alpha_cutoff: f32,
-    flags: u32,
 };
 
 #ifdef BINDLESS
@@ -125,18 +124,19 @@ fn alpha_dither(alpha: f32, screen_pos: vec2<f32>) {
 
 // Modified alpha_discard to use stochastic transparency
 fn alpha_discard(mat: PbrMaterial, color: vec4<f32>, screen_pos: vec2<f32>) {
-    if (mat.flags & 512u) != 0u {  // New flag for stochastic mode
+#ifdef STOCHASTIC_ALPHA
         alpha_dither(color.a, screen_pos);
-    } else {
-        // Original alpha handling
-        if (mat.flags & 1) != 0u {
-            if color.a < mat.alpha_cutoff { discard; }
-        } else if (mat.flags & 128u) != 0u {
-            if color.a < 0.05 { discard; }
-        } else if (mat.flags & 256u) != 0u {
-            if all(color < vec4(0.05)) { discard; }
-        }
-    }
+#endif
+    // Original alpha handling
+#ifdef ALPHA_MASK
+    if color.a < mat.alpha_cutoff { discard; }
+#endif
+#ifdef ALPHA_CUTOFF
+    if color.a < 0.05 { discard; }
+#endif
+#ifdef ALPHA_CUTOFF_FULL
+    if all(color < vec4(0.05)) { discard; }
+#endif
 }
 
 @fragment
@@ -174,36 +174,36 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
     albedo *= in.color;
     #endif
 
-    if (material.flags & 4u) != 0u {
+    #ifdef HAS_DIFFUSE_TEX
         #ifdef VERTEX_UVS_A
         albedo *= textureSample(diffuse_texture, diffuse_sampler, uv);
         #endif
-    }
-    alpha_dither(albedo.a, in.position.xy);
-    // alpha_discard(material, albedo, in.position.xy);
+    #endif
+    // alpha_dither(albedo.a, in.position.xy);
+    alpha_discard(material, albedo, in.position.xy);
     albedo.a = 1.0;
     // albedo = vec4(0.0);
 
     var emissive = material.emission_factor.rgb;
-    if (material.flags & 16u) != 0u {
+    #ifdef HAS_EMISSION_TEX
         #ifdef VERTEX_UVS_A
         emissive *= textureSample(emission_texture, emission_sampler, uv).rgb;
         #endif
-    }
+    #endif
 
     var metal_rough = vec2(material.roughness, material.metallic);
-    if (material.flags & 32u) != 0u {
+    #ifdef HAS_METAL_TEX
         #ifdef VERTEX_UVS_A
         metal_rough *= textureSample(metal_texture, metal_sampler, uv).bg;
         #endif
-    }
+    #endif
 
     var ao = 1.0;
-    if (material.flags & 64u) != 0u {
+    #ifdef HAS_OCCLUSION_TEX
         #ifdef VERTEX_UVS_A
         ao = textureSample(occlusion_texture, occlusion_sampler, uv).r;
         #endif
-    }
+    #endif
 
     let N = normalize(pbr_input.world_normal);
     let V = normalize(view.world_position.xyz - in.world_position.xyz);

@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use crate::skytext::SPHERICAL_HARMONICS_HANDLE;
 use bevy::asset::{load_internal_asset, weak_handle};
 use bevy::ecs::component::HookContext;
@@ -25,12 +27,12 @@ impl Plugin for SkMaterialPlugin {
             "../assets/pbr_material.wgsl",
             Shader::from_wgsl
         );
-        load_internal_asset!(
-            app,
-            SHADER_PREPASS_HANDLE,
-            "../assets/pbr_material_prepass.wgsl",
-            Shader::from_wgsl
-        );
+        // load_internal_asset!(
+        //     app,
+        //     SHADER_PREPASS_HANDLE,
+        //     "../assets/pbr_material_prepass.wgsl",
+        //     Shader::from_wgsl
+        // );
         app.add_plugins(MaterialPlugin::<PbrMaterial>::default());
         app.register_type::<PbrMaterial>();
         if self.replace_standard_material {
@@ -86,9 +88,8 @@ fn on_swap_add(mut world: DeferredWorld, ctx: HookContext) {
 #[derive(Resource, Default)]
 struct HandleMapping(HashMap<AssetId<StandardMaterial>, Handle<PbrMaterial>>);
 pub const SHADER_HANDLE: Handle<Shader> = weak_handle!("c0042819-def7-4e25-bb61-62900fbab385");
-pub const SHADER_PREPASS_HANDLE: Handle<Shader> = weak_handle!(
-    "6612069e-ef8e-4367-bc73-ad0af6a47521"
-);
+pub const SHADER_PREPASS_HANDLE: Handle<Shader> =
+    weak_handle!("6612069e-ef8e-4367-bc73-ad0af6a47521");
 
 #[derive(Asset, AsBindGroup, PartialEq, Debug, Clone, Reflect)]
 #[bind_group_data(PbrMaterialKey)]
@@ -100,7 +101,6 @@ pub struct PbrMaterial {
     pub metallic: f32,
     pub roughness: f32,
     pub alpha_mode: AlphaMode,
-    pub double_sided: bool,
 
     #[texture(1)]
     #[sampler(2)]
@@ -138,7 +138,6 @@ impl From<&StandardMaterial> for PbrMaterial {
             metallic: m.metallic,
             roughness: m.perceptual_roughness,
             alpha_mode: m.alpha_mode,
-            double_sided: m.double_sided,
             diffuse_texture: m.base_color_texture.clone(),
             emission_texture: m.emissive_texture.clone(),
             metal_texture: m.metallic_roughness_texture.clone(),
@@ -155,12 +154,10 @@ pub struct PbrMaterialUniform {
     pub metallic: f32,
     pub roughness: f32,
     pub alpha_cutoff: f32,
-    pub flags: u32,
 }
 
 impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
     fn as_bind_group_shader_type(&self, _images: &RenderAssets<GpuImage>) -> PbrMaterialUniform {
-        let flags = PbrMaterialFlags::from(self);
 
         PbrMaterialUniform {
             color: self.color.to_linear().to_f32_array().into(),
@@ -172,53 +169,55 @@ impl AsBindGroupShaderType<PbrMaterialUniform> for PbrMaterial {
             } else {
                 1.0
             },
-            flags: flags.bits(),
         }
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct PbrMaterialKey(PbrMaterialFlags);
-impl From<&PbrMaterial> for PbrMaterialFlags {
-    fn from(value: &PbrMaterial) -> Self {
-        let mut flags = PbrMaterialFlags::empty();
-
-        if value.diffuse_texture.is_some() {
-            flags |= PbrMaterialFlags::DIFFUSE_TEXTURE;
+pub struct PbrMaterialKey {
+    alpha_mode: HashableAlphaMode,
+    diffuse_texture: bool,
+    emission_texture: bool,
+    metal_texture: bool,
+    occlusion_texture: bool,
+}
+#[derive(Clone, PartialEq, Eq, Copy, Deref, DerefMut, Debug)]
+pub struct HashableAlphaMode(pub AlphaMode);
+impl Hash for HashableAlphaMode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self.0 {
+            AlphaMode::Opaque => state.write_u8(0),
+            AlphaMode::Mask(v) => {
+                state.write_u8(1);
+                state.write_u32(v.to_bits());
+            }
+            AlphaMode::Blend => state.write_u8(2),
+            AlphaMode::Premultiplied => state.write_u8(3),
+            AlphaMode::AlphaToCoverage => state.write_u8(4),
+            AlphaMode::Add => state.write_u8(5),
+            AlphaMode::Multiply => state.write_u8(6),
         }
-        if value.emission_texture.is_some() {
-            flags |= PbrMaterialFlags::EMISSION_TEXTURE;
-        }
-        if value.metal_texture.is_some() {
-            flags |= PbrMaterialFlags::METAL_TEXTURE;
-        }
-        if value.occlusion_texture.is_some() {
-            flags |= PbrMaterialFlags::OCCLUSION_TEXTURE;
-        }
-        if value.double_sided {
-            flags |= PbrMaterialFlags::DOUBLE_SIDED;
-        }
-        if matches!(
-            value.alpha_mode,
-            AlphaMode::Blend | AlphaMode::Add | AlphaMode::AlphaToCoverage
-        ) {
-            flags |= PbrMaterialFlags::ALPHA_CUTOFF;
-        }
-        if matches!(value.alpha_mode, AlphaMode::Premultiplied) {
-            flags |= PbrMaterialFlags::ALPHA_CUTOFF_FULL;
-        }
-
-        match value.alpha_mode {
-            AlphaMode::Opaque => flags |= PbrMaterialFlags::ALPHA_MODE_OPAQUE,
-            AlphaMode::Mask(_) => flags |= PbrMaterialFlags::ALPHA_MODE_MASK,
-            _ => {}
-        };
-        flags
+    }
+}
+impl From<AlphaMode> for HashableAlphaMode {
+    fn from(value: AlphaMode) -> Self {
+        Self(value)
+    }
+}
+impl From<HashableAlphaMode> for AlphaMode {
+    fn from(value: HashableAlphaMode) -> Self {
+        value.0
     }
 }
 impl From<&PbrMaterial> for PbrMaterialKey {
     fn from(material: &PbrMaterial) -> Self {
-        PbrMaterialKey(PbrMaterialFlags::from(material))
+        PbrMaterialKey {
+            alpha_mode: material.alpha_mode.into(),
+            diffuse_texture: material.diffuse_texture.is_some(),
+            emission_texture: material.emission_texture.is_some(),
+            metal_texture: material.metal_texture.is_some(),
+            occlusion_texture: material.occlusion_texture.is_some(),
+        }
     }
 }
 
@@ -234,21 +233,46 @@ impl Material for PbrMaterial {
     fn alpha_mode(&self) -> AlphaMode {
         self.alpha_mode
     }
-}
 
-bitflags::bitflags! {
-    #[repr(transparent)]
-    #[derive(Clone, PartialEq, Eq, Hash, Copy)]
-    pub struct PbrMaterialFlags: u32 {
-        const ALPHA_MODE_MASK    = (1 << 0);
-        const ALPHA_MODE_OPAQUE  = (1 << 1);
-        const DIFFUSE_TEXTURE    = (1 << 2);
-        const DOUBLE_SIDED       = (1 << 3);
-        const EMISSION_TEXTURE   = (1 << 4);
-        const METAL_TEXTURE      = (1 << 5);
-        const OCCLUSION_TEXTURE  = (1 << 6);
-        const ALPHA_CUTOFF       = (1 << 7);
-        const ALPHA_CUTOFF_FULL  = (1 << 8);
+    #[allow(unused_variables)]
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialPipeline<Self>,
+        descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
+        _layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
+        key: bevy::pbr::MaterialPipelineKey<Self>,
+    ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
+        let fragment = descriptor.fragment.as_mut().unwrap();
+        let data = &key.bind_group_data;
+        #[cfg(feature = "stochastic_alpha")]
+        {
+            fragment.shader_defs.push("STOCHASTIC_ALPHA".into());
+        }
+        #[cfg(not(feature = "stochastic_alpha"))]
+        match data.alpha_mode.0 {
+            AlphaMode::Opaque => {}
+            AlphaMode::Mask(_) => {
+                fragment.shader_defs.push("ALPHA_MASK".into());
+            }
+            AlphaMode::Blend | AlphaMode::AlphaToCoverage | AlphaMode::Add => {
+                fragment.shader_defs.push("ALPHA_CUTOFF".into());
+            }
+            AlphaMode::Multiply | AlphaMode::Premultiplied => {
+                fragment.shader_defs.push("ALPHA_CUTOFF_FULL".into());
+            }
+        }
+        if data.diffuse_texture {
+            fragment.shader_defs.push("HAS_DIFFUSE_TEX".into());
+        }
+        if data.emission_texture {
+            fragment.shader_defs.push("HAS_EMISSION_TEX".into());
+        }
+        if data.metal_texture {
+            fragment.shader_defs.push("HAS_METAL_TEX".into());
+        }
+        if data.occlusion_texture {
+            fragment.shader_defs.push("HAS_OCCLUSION_TEX".into());
+        }
+        Ok(())
     }
 }
 
@@ -260,7 +284,6 @@ impl Default for PbrMaterial {
             metallic: 0.0,
             roughness: 0.0,
             alpha_mode: AlphaMode::Opaque,
-            double_sided: false,
             diffuse_texture: None,
             emission_texture: None,
             metal_texture: None,
