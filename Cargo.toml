@@ -12,6 +12,7 @@ bitflags = "2.6.0"
 [dev-dependencies]
 bevy_mod_openxr = "0.3"
 bevy_xr_utils = "0.3"
+bevy = { version = "0.16", default-features = true }
 # bevy_panorbit_camera = "0.19.3"
 
 # Enable a small amount of optimization in the dev profile.
