@@ -1,4 +1,5 @@
 #import bevy_pbr::mesh_view_bindings
+#import bevy_pbr::mesh_view_bindings::globals
 #import bevy_pbr::mesh_bindings
 #import bevy_pbr::utils
 #import bevy_pbr::{
@@ -18,10 +19,9 @@ struct PbrMaterial {
     emission_factor: vec4<f32>,
     metallic: f32,
     roughness: f32,
-    alpha_cutoff:f32,
+    alpha_cutoff: f32,
     flags: u32,
 };
-
 
 #ifdef BINDLESS
 struct PbrMaterialBindings {
@@ -36,7 +36,6 @@ struct PbrMaterialBindings {
     occlusion_texture_sampler: u32,
     // spherical_harmonics: u32,
 }
-
 @group(2) @binding(0) var<storage> materials: array<PbrMaterialBindings>;
 @group(2) @binding(10) var<storage> material_data: binding_array<PbrMaterial>;
 // @group(2) @binding(11) var<storage> spherical_harmonics_buffer: binding_array<Test>;
@@ -59,7 +58,7 @@ var metal_sampler: sampler;
 var occlusion_texture: texture_2d<f32>;
 @group(2) @binding(8)
 var occlusion_sampler: sampler;
-@group(2) @binding(9) 
+@group(2) @binding(9)
 var<storage, read> spherical_harmonics_buffer: array<vec3<f32>, 9>;
 #endif
 
@@ -110,19 +109,32 @@ fn sk_pbr_brdf_appx(roughness: f32, ndotv: f32) -> vec2<f32> {
     let a004 = min(r.x * r.x, exp2(-9.28 * ndotv)) * r.x + r.y;
     return vec2(-1.04, 1.04) * a004 + r.zw;
 }
+fn interleaved_gradient_noise(pixel: vec2<f32>, frame: u32) -> f32 {
+    let p = pixel + (f32(frame) * 5.588238);
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
 
-fn alpha_discard(mat: PbrMaterial,color:vec4<f32>) {
-    if (mat.flags & 1) != 0 {
-        if color.a < mat.alpha_cutoff {
-            discard;
-        }
-    } else if (mat.flags & 128) != 0 {
-        if color.a < 0.05 {
-            discard;
-        }
-    } else if (mat.flags & 256) != 0 {
-        if all(color < vec4(0.05)) {
-            discard;
+fn alpha_dither(alpha: f32, screen_pos: vec2<f32>) {
+    // Using Bevy's built-in frame counter
+    let noise = interleaved_gradient_noise(screen_pos, globals.frame_count);
+
+    if noise >= alpha {
+        discard;
+    }
+}
+
+// Modified alpha_discard to use stochastic transparency
+fn alpha_discard(mat: PbrMaterial, color: vec4<f32>, screen_pos: vec2<f32>) {
+    if (mat.flags & 512u) != 0u {  // New flag for stochastic mode
+        alpha_dither(color.a, screen_pos);
+    } else {
+        // Original alpha handling
+        if (mat.flags & 1) != 0u {
+            if color.a < mat.alpha_cutoff { discard; }
+        } else if (mat.flags & 128u) != 0u {
+            if color.a < 0.05 { discard; }
+        } else if (mat.flags & 256u) != 0u {
+            if all(color < vec4(0.05)) { discard; }
         }
     }
 }
@@ -131,8 +143,8 @@ fn alpha_discard(mat: PbrMaterial,color:vec4<f32>) {
 fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @location(0) vec4<f32> {
 #ifdef BINDLESS
     let slot = mesh[in.instance_index].material_and_lightmap_bind_group_slot & 0xffffu;
-    let material =  material_data[materials[slot].material];
-    
+    let material = material_data[materials[slot].material];
+
     let diffuse_texture = bindless_textures_2d[materials[slot].diffuse_texture];
     let diffuse_sampler = bindless_samplers_filtering[materials[slot].diffuse_texture_sampler];
 
@@ -167,10 +179,10 @@ fn fragment(@builtin(front_facing) is_front: bool, in: VertexOutput) -> @locatio
         albedo *= textureSample(diffuse_texture, diffuse_sampler, uv);
         #endif
     }
-    alpha_discard(material,albedo);
-// if albedo.a < 0.5 {
-// discard;
-// }
+    alpha_dither(albedo.a, in.position.xy);
+    // alpha_discard(material, albedo, in.position.xy);
+    albedo.a = 1.0;
+    // albedo = vec4(0.0);
 
     var emissive = material.emission_factor.rgb;
     if (material.flags & 16u) != 0u {
